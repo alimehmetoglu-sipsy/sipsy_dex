@@ -1,0 +1,37 @@
+# DexAgents Windows Agent - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+websockets>=12.0          # WebSocket client communication
+psutil>=5.9.6            # System monitoring and process management
+requests>=2.31.0         # HTTP requests for API calls
+
+# Security and encryption
+cryptography>=41.0.0     # Configuration encryption
+certifi>=2023.7.22       # SSL certificate verification
+
+# GUI dependencies (built-in with Python)
+# tkinter is included with Python standard library
+
+# System tray support (optional)
+pystray>=0.19.4          # System tray integration
+Pillow>=10.0.0           # Image processing for tray icons
+
+# Windows-specific dependencies (install only on Windows)
+pywin32>=306; sys_platform == "win32"  # Windows API integration
+wmi>=1.5.1; sys_platform == "win32"    # Windows Management Instrumentation
+
+# Development and build dependencies
+pyinstaller>=6.0.0      # Executable building
+setuptools>=68.0.0      # Package building
+wheel>=0.41.0           # Wheel building
+
+# Optional performance enhancements
+ujson>=5.8.0            # Faster JSON processing (optional)
+
+# Network and HTTP enhancements
+urllib3>=2.0.0          # HTTP library
+
+# Development tools (optional)
+pytest>=7.4.0          # Testing framework
+pytest-asyncio>=0.21.0 # Async testing support 

@@ -1,0 +1,8 @@
+{
+  "server_url": "ws://localhost:8080",
+  "api_token": "test-token", 
+  "agent_name": "WindowsTestAgent",
+  "tags": ["windows", "test", "demo"],
+  "auto_start": true,
+  "run_as_service": false
+}

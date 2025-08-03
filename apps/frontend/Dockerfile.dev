@@ -1,0 +1,64 @@
+# Development Dockerfile for DexAgent Frontend
+# Multi-stage build for development with hot reload and debugging
+
+FROM node:18-alpine as base
+
+# Set environment variables
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NPM_CONFIG_LOGLEVEL=warn
+
+# Install system dependencies
+RUN apk add --no-cache \
+    git \
+    curl \
+    bash
+
+# Create non-root user
+RUN addgroup -g 1001 -S nextjs && \
+    adduser -S nextjs -u 1001
+
+# Development stage
+FROM base as development
+
+# Install development tools
+RUN apk add --no-cache \
+    vim \
+    htop \
+    procps
+
+# Set work directory
+WORKDIR /app
+
+# Copy package files first for better Docker layer caching
+COPY package*.json ./
+COPY pnpm-lock.yaml* ./
+
+# Install dependencies
+RUN npm ci --include=dev
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/.next /app/node_modules && \
+    chown -R nextjs:nextjs /app
+
+# Copy source code
+COPY . .
+
+# Install Playwright browsers for testing
+RUN npx playwright install --with-deps chromium || true
+
+# Fix permissions
+RUN chown -R nextjs:nextjs /app
+
+# Switch to non-root user
+USER nextjs
+
+# Expose ports
+EXPOSE 3000 3001 9229
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Development command with hot reload and debugging
+CMD ["npm", "run", "dev"]
