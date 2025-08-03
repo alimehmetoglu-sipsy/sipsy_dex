@@ -6,12 +6,507 @@ import zipfile
 import logging
 import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
 from ..schemas.agent import AgentInstallerConfig
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
 class AgentInstallerService:
+    @staticmethod
+    def create_self_extracting_installer(config: AgentInstallerConfig) -> str:
+        """
+        Create the new self-extracting installer with full GUI and tray support
+        """
+        try:
+            # Create temporary directory
+            temp_dir = tempfile.mkdtemp()
+            
+            # Get agent name early
+            agent_name = config.agent_name or 'Windows'
+            
+            # Create embedded configuration with optimized localhost settings
+            config_data = {
+                "server_url": config.server_url or "http://localhost:8080",
+                "api_token": config.api_token or "",
+                "agent_name": config.agent_name or f"agent_localhost_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "tags": (config.tags or []) + ["windows", "self-extracting", "modern-gui", "localhost"],
+                "auto_start": config.auto_start if config.auto_start is not None else True,
+                "run_as_service": config.run_as_service if config.run_as_service is not None else False,
+                "minimize_to_tray": True,
+                "connection_timeout": 10,
+                "reconnection_attempts": 10,
+                "heartbeat_interval": 30,
+                "update_interval": 30,
+                "debug_mode": False,
+                "version": "3.0.0",
+                "created_at": datetime.now().isoformat()
+            }
+            
+            # Copy agent files from the source directory
+            # Handle different environments: Docker vs local development
+            current_file = Path(__file__).resolve()
+            
+            # In Docker container, files are at /app/ level (not just containing /app/)
+            # In local development, they're in the full path
+            if str(current_file).startswith("/app/"):
+                # Docker environment: /app/app/services/agent_installer_service.py -> /app/apps/agent
+                app_root = Path("/app")
+                agent_source_dir = app_root / "apps" / "agent"
+            else:
+                # Local development: navigate from backend/app/services back to apps/agent
+                apps_dir = current_file.parent.parent.parent.parent  # services -> app -> backend -> apps
+                agent_source_dir = apps_dir / "agent"
+            
+            logger.info(f"Looking for agent files in: {agent_source_dir}")
+            if not agent_source_dir.exists():
+                logger.error(f"Agent source directory not found: {agent_source_dir}")
+                raise FileNotFoundError(f"Agent source directory not found: {agent_source_dir}")
+            
+            agent_files = [
+                "installer_main.py",
+                "modern_agent_gui.py", 
+                "tray_manager.py",
+                "config_manager.py",
+                "websocket_client.py",
+                "system_monitor.py",
+                "powershell_executor.py",
+                "logger.py",
+                "windows_agent.py",
+                "requirements.txt"
+            ]
+            
+            # Copy agent files to temp directory
+            for filename in agent_files:
+                source_path = agent_source_dir / filename
+                if source_path.exists():
+                    target_path = Path(temp_dir) / filename
+                    shutil.copy2(source_path, target_path)
+                    logger.info(f"Copied {filename} to temp directory")
+                else:
+                    logger.warning(f"Agent file not found: {source_path}")
+            
+            # Create embedded config file
+            config_path = os.path.join(temp_dir, "embedded_config.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+            
+            # Create PyInstaller spec for self-extracting installer
+            spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
+# DexAgents Self-Extracting Installer Spec
+
+import sys
+import os
+
+block_cipher = None
+
+# Data files to include
+datas = []
+for file in [
+    'modern_agent_gui.py',
+    'tray_manager.py', 
+    'config_manager.py',
+    'websocket_client.py',
+    'system_monitor.py',
+    'powershell_executor.py',
+    'logger.py',
+    'windows_agent.py',
+    'embedded_config.json',
+    'requirements.txt'
+]:
+    if os.path.exists(file):
+        datas.append((file, '.'))
+
+a = Analysis(
+    ['installer_main.py'],
+    pathex=[],
+    binaries=[],
+    datas=datas,
+    hiddenimports=[
+        # Core Python modules
+        'tkinter',
+        'tkinter.ttk',
+        'tkinter.messagebox',
+        'tkinter.filedialog',
+        'tkinter.scrolledtext',
+        'threading',
+        'json',
+        'os',
+        'sys',
+        'platform',
+        'subprocess',
+        'shutil',
+        'tempfile',
+        'pathlib',
+        'datetime',
+        'time',
+        'logging',
+        
+        # Network and communication
+        'websockets',
+        'websockets.client',
+        'websockets.legacy',
+        'websockets.legacy.client',
+        'requests',
+        'urllib',
+        'urllib.parse',
+        'http',
+        'socket',
+        'ssl',
+        
+        # System monitoring
+        'psutil',
+        
+        # Crypto and security
+        'cryptography',
+        'cryptography.fernet',
+        'cryptography.hazmat',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.kdf',
+        'cryptography.hazmat.primitives.kdf.pbkdf2',
+        'hashlib',
+        'base64',
+        
+        # System tray
+        'pystray',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageDraw',
+        
+        # Windows specific
+        'winreg',
+        'win32api',
+        'win32con',
+        'win32gui',
+        'win32service',
+        'win32com',
+        'win32com.client',
+        'winshell',
+        'wmi',
+        
+        # Async support
+        'asyncio',
+        'asyncio.events',
+        'asyncio.tasks',
+        'asyncio.streams',
+        'asyncio.subprocess',
+        
+        # Agent components (explicitly include)
+        'system_monitor',
+        'powershell_executor', 
+        'logger',
+        'websocket_client',
+        'tray_manager',
+        'config_manager'
+    ],
+    hookspath=[],
+    hooksconfig={{}},
+    runtime_hooks=[],
+    excludes=[
+        'matplotlib',
+        'numpy',
+        'scipy',
+        'pandas',
+        'jupyter',
+        'IPython'
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='DexAgents_Agent_v3.0_Installer',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    cofile=None,
+    icon=None,
+)
+'''
+            
+            spec_path = os.path.join(temp_dir, "installer.spec")
+            with open(spec_path, 'w') as f:
+                f.write(spec_content)
+            
+            # Try to build the installer executable
+            logger.info("Building self-extracting installer...")
+            
+            try:
+                # Install PyInstaller if not available
+                subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller", "--quiet"], 
+                             check=False, cwd=temp_dir)
+                
+                # Build using PyInstaller
+                build_result = subprocess.run([
+                    sys.executable, "-m", "PyInstaller",
+                    "--clean",
+                    "installer.spec"
+                ], cwd=temp_dir, capture_output=True, text=True, timeout=300)
+                
+                if build_result.returncode == 0:
+                    # Find the built executable
+                    dist_dir = os.path.join(temp_dir, "dist")
+                    if os.path.exists(dist_dir):
+                        exe_files = [f for f in os.listdir(dist_dir) if f.endswith('.exe')]
+                        if exe_files:
+                            built_exe = os.path.join(dist_dir, exe_files[0])
+                            
+                            # Move to final location
+                            final_exe_name = f"DexAgents_Agent_v3.0_Installer_{agent_name}.exe"
+                            final_exe_path = os.path.join(settings.TEMP_DIR, final_exe_name)
+                            
+                            os.makedirs(settings.TEMP_DIR, exist_ok=True)
+                            shutil.copy2(built_exe, final_exe_path)
+                            
+                            # Clean up temp directory
+                            shutil.rmtree(temp_dir)
+                            
+                            logger.info(f"Self-extracting installer created: {final_exe_path}")
+                            return final_exe_path
+                
+            except Exception as build_error:
+                logger.warning(f"PyInstaller build failed: {build_error}")
+            
+            # Fallback: Create a ZIP package with Python scripts
+            logger.info("Creating fallback ZIP package...")
+            return AgentInstallerService._create_fallback_package(temp_dir, config, agent_name)
+            
+        except Exception as e:
+            logger.error(f"Error creating self-extracting installer: {str(e)}")
+            # Clean up on error
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            raise
+    
+    @staticmethod
+    def _create_fallback_package(temp_dir: str, config: AgentInstallerConfig, agent_name: str) -> str:
+        """Create fallback ZIP package when PyInstaller fails"""
+        
+        # Create installer script
+        installer_script = f'''#!/usr/bin/env python3
+"""
+DexAgents Agent Installer & Runner
+Self-contained installer with modern GUI and system tray support
+"""
+
+import os
+import sys
+import json
+import tkinter as tk
+from tkinter import messagebox
+import subprocess
+import platform
+from pathlib import Path
+
+def check_dependencies():
+    """Check if required Python packages are installed"""
+    required_packages = ['websockets', 'psutil', 'requests', 'pystray', 'pillow', 'cryptography']
+    missing = []
+    
+    for package in required_packages:
+        try:
+            if package == 'pillow':
+                import PIL
+            else:
+                __import__(package)
+        except ImportError:
+            missing.append(package)
+    
+    return missing
+
+def install_dependencies(missing_packages):
+    """Install missing dependencies"""
+    if not missing_packages:
+        return True
+    
+    try:
+        print("Installing required packages...")
+        cmd = [sys.executable, "-m", "pip", "install"] + missing_packages
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print("Dependencies installed successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install dependencies: {{e}}")
+        return False
+
+def main():
+    """Main installer entry point"""
+    print("DexAgents Agent v3.0 - Installation & Setup")
+    print("=" * 50)
+    
+    # Check Python version
+    if sys.version_info < (3, 8):
+        print("ERROR: Python 3.8 or higher is required")
+        input("Press Enter to exit...")
+        return 1
+    
+    # Check dependencies
+    missing = check_dependencies()
+    if missing:
+        print(f"Missing packages: {{', '.join(missing)}}")
+        print("Installing dependencies...")
+        if not install_dependencies(missing):
+            print("Failed to install dependencies. Please install manually:")
+            print(f"pip install {{' '.join(missing)}}")
+            input("Press Enter to exit...")
+            return 1
+    
+    try:
+        # Import the installer after dependencies are available
+        from installer_main import SelfExtractingInstaller
+        
+        # Create and run installer
+        installer = SelfExtractingInstaller()
+        success = installer.main()
+        
+        return 0 if success else 1
+        
+    except ImportError as e:
+        print(f"Import error: {{e}}")
+        print("Some required files may be missing.")
+        input("Press Enter to exit...")
+        return 1
+    except Exception as e:
+        print(f"Installation error: {{e}}")
+        input("Press Enter to exit...")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+        
+        installer_path = os.path.join(temp_dir, "install_agent.py")
+        with open(installer_path, 'w', encoding='utf-8') as f:
+            f.write(installer_script)
+        
+        # Create batch file for Windows
+        batch_content = f'''@echo off
+title DexAgents Agent v3.0 - Installer
+echo DexAgents Agent v3.0 - Installation
+echo ====================================
+echo.
+
+REM Check if Python is installed
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Python is not installed or not in PATH
+    echo.
+    echo Please install Python 3.8+ from https://python.org
+    echo Make sure to check "Add Python to PATH" during installation
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Starting installation...
+python install_agent.py
+
+if errorlevel 1 (
+    echo.
+    echo Installation failed. Press any key to exit.
+    pause >nul
+    exit /b 1
+)
+
+echo.
+echo Installation completed successfully!
+pause
+'''
+        
+        batch_path = os.path.join(temp_dir, "Install_DexAgent.bat")
+        with open(batch_path, 'w') as f:
+            f.write(batch_content)
+        
+        # Create README
+        readme_content = f'''DexAgents Agent v3.0 - Modern Windows Agent
+==========================================
+
+This package contains the latest DexAgents Windows Agent with:
+✓ Modern GUI interface
+✓ System tray integration  
+✓ Self-extracting installer
+✓ Auto-start capabilities
+✓ Windows service support
+
+QUICK START:
+1. Double-click "Install_DexAgent.bat"
+2. Follow the installation wizard
+3. Agent will connect to: {config.server_url}
+
+MANUAL INSTALLATION:
+1. Ensure Python 3.8+ is installed
+2. Run: python install_agent.py
+
+FEATURES:
+- Professional installation wizard
+- System tray with status indicators
+- Minimize to tray functionality
+- Manual sync capabilities
+- Comprehensive configuration options
+- Windows service mode available
+- Auto-start with Windows
+
+SYSTEM REQUIREMENTS:
+- Windows 10 or later
+- Python 3.8 or higher
+- Internet connection for setup
+
+The installer will automatically:
+- Install required Python packages
+- Set up the agent in a proper directory
+- Configure Windows integration
+- Create shortcuts and auto-start entries
+
+For support, contact your system administrator.
+
+Agent Configuration:
+- Server: {config.server_url}
+- Agent Name: {agent_name}
+- Tags: {', '.join(config.tags) if config.tags else 'None'}
+'''
+        
+        readme_path = os.path.join(temp_dir, "README.txt")
+        with open(readme_path, 'w', encoding='utf-8') as f:
+            f.write(readme_content)
+        
+        # Create ZIP package
+        zip_filename = f"DexAgents_Agent_v3.0_Installer_{agent_name}.zip"
+        zip_path = os.path.join(settings.TEMP_DIR, zip_filename)
+        
+        os.makedirs(settings.TEMP_DIR, exist_ok=True)
+        
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+        
+        # Clean up temp directory
+        shutil.rmtree(temp_dir)
+        
+        logger.info(f"Fallback installer package created: {zip_path}")
+        return zip_path
+
     @staticmethod
     def create_prebuilt_exe(config: AgentInstallerConfig) -> str:
         """

@@ -158,9 +158,9 @@ check_dependencies() {
     
     # Check if Playwright browsers are installed (for E2E tests)
     if [ "$TEST_TYPE" = "e2e" ] || [ "$TEST_TYPE" = "all" ]; then
-        if ! playwright show-browser 2>/dev/null; then
+        if ! python3 -m playwright show-browser 2>/dev/null; then
             print_warning "Installing Playwright browsers..."
-            playwright install
+            python3 -m playwright install
         fi
     fi
 }
@@ -172,7 +172,7 @@ start_services() {
         docker-compose -f tests/docker-compose.test.yml up -d
         
         print_info "Waiting for services to be ready..."
-        python tests/scripts/wait_for_services.py
+        python3 tests/scripts/wait_for_services.py
     else
         print_info "Checking if services are running locally..."
         
@@ -239,10 +239,12 @@ build_pytest_command() {
             ;;
     esac
     
-    # Add headless mode for E2E tests
+    # Add headless mode for E2E tests (passed via environment variable)
     if [ "$TEST_TYPE" = "e2e" ] || [ "$TEST_TYPE" = "all" ]; then
         if [ "$HEADLESS" = "true" ]; then
-            cmd="$cmd --browser-channel=chromium"
+            export PLAYWRIGHT_HEADLESS=true
+        else
+            export PLAYWRIGHT_HEADLESS=false
         fi
     fi
     
@@ -284,7 +286,7 @@ generate_reports() {
     # Generate performance report for performance tests
     if [ "$TEST_TYPE" = "performance" ] || [ "$TEST_TYPE" = "all" ]; then
         if [ -f "tests/results/performance.json" ]; then
-            python tests/scripts/generate_performance_report.py
+            python3 tests/scripts/generate_performance_report.py
         fi
     fi
     

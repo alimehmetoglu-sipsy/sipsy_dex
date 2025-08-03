@@ -104,4 +104,527 @@ class SystemMonitor:
                     'packets_recv': network.packets_recv,
                     'interfaces': network_interfaces
                 },
-                'processes': {\n                    'count': process_count\n                },\n                'load_average': load_avg,\n                'uptime_seconds': self._get_uptime()\n            }\n            \n            return stats\n            \n        except Exception as e:\n            self.logger.error(f\"Error getting current stats: {e}\")\n            return {\n                'timestamp': datetime.now().isoformat(),\n                'error': str(e)\n            }\n    \n    def get_detailed_info(self) -> Dict[str, Any]:\n        \"\"\"Get detailed system information with caching\"\"\"\n        now = time.time()\n        \n        # Check cache\n        if (self._system_info_cache and self._cache_timestamp and \n            (now - self._cache_timestamp) < self._cache_duration):\n            return self._system_info_cache\n        \n        try:\n            # Basic system info\n            system_info = {\n                'timestamp': datetime.now().isoformat(),\n                'hostname': socket.gethostname(),\n                'platform': {\n                    'system': platform.system(),\n                    'release': platform.release(),\n                    'version': platform.version(),\n                    'machine': platform.machine(),\n                    'processor': platform.processor(),\n                    'architecture': platform.architecture(),\n                    'python_version': platform.python_version()\n                }\n            }\n            \n            # CPU information\n            cpu_info = {\n                'physical_cores': psutil.cpu_count(logical=False),\n                'logical_cores': psutil.cpu_count(logical=True),\n                'max_frequency': None,\n                'min_frequency': None,\n                'current_frequency': None\n            }\n            \n            cpu_freq = psutil.cpu_freq()\n            if cpu_freq:\n                cpu_info.update({\n                    'max_frequency': cpu_freq.max,\n                    'min_frequency': cpu_freq.min,\n                    'current_frequency': cpu_freq.current\n                })\n            \n            system_info['cpu'] = cpu_info\n            \n            # Memory information\n            memory = psutil.virtual_memory()\n            swap = psutil.swap_memory()\n            \n            system_info['memory'] = {\n                'total_ram': memory.total,\n                'total_swap': swap.total,\n                'ram_slots': self._get_memory_slots()\n            }\n            \n            # Disk information\n            disk_info = []\n            for partition in psutil.disk_partitions():\n                try:\n                    usage = psutil.disk_usage(partition.mountpoint)\n                    disk_info.append({\n                        'device': partition.device,\n                        'mountpoint': partition.mountpoint,\n                        'filesystem': partition.fstype,\n                        'total': usage.total,\n                        'used': usage.used,\n                        'free': usage.free,\n                        'percentage': round((usage.used / usage.total) * 100, 1)\n                    })\n                except (PermissionError, OSError):\n                    continue\n            \n            system_info['disks'] = disk_info\n            \n            # Network information\n            network_info = []\n            for interface, addresses in psutil.net_if_addrs().items():\n                interface_info = {\n                    'interface': interface,\n                    'addresses': []\n                }\n                \n                for addr in addresses:\n                    interface_info['addresses'].append({\n                        'family': str(addr.family),\n                        'address': addr.address,\n                        'netmask': addr.netmask,\n                        'broadcast': addr.broadcast\n                    })\n                \n                # Get interface statistics\n                try:\n                    stats = psutil.net_if_stats()[interface]\n                    interface_info['stats'] = {\n                        'is_up': stats.isup,\n                        'duplex': str(stats.duplex),\n                        'speed': stats.speed,\n                        'mtu': stats.mtu\n                    }\n                except KeyError:\n                    pass\n                \n                network_info.append(interface_info)\n            \n            system_info['network_interfaces'] = network_info\n            \n            # Process information\n            processes = []\n            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status']):\n                try:\n                    processes.append(proc.info)\n                except (psutil.NoSuchProcess, psutil.AccessDenied):\n                    continue\n            \n            # Sort by CPU usage and get top 10\n            processes.sort(key=lambda x: x.get('cpu_percent', 0), reverse=True)\n            system_info['top_processes'] = processes[:10]\n            \n            # Windows-specific information\n            if platform.system() == 'Windows':\n                system_info['windows'] = self._get_windows_info()\n            \n            # Linux-specific information\n            elif platform.system() == 'Linux':\n                system_info['linux'] = self._get_linux_info()\n            \n            # macOS-specific information\n            elif platform.system() == 'Darwin':\n                system_info['macos'] = self._get_macos_info()\n            \n            # Boot time and uptime\n            boot_time = psutil.boot_time()\n            system_info['boot_time'] = datetime.fromtimestamp(boot_time).isoformat()\n            system_info['uptime_seconds'] = time.time() - boot_time\n            \n            # Current stats\n            system_info['current_stats'] = self.get_current_stats()\n            \n            # Cache the result\n            self._system_info_cache = system_info\n            self._cache_timestamp = now\n            \n            return system_info\n            \n        except Exception as e:\n            self.logger.error(f\"Error getting detailed system info: {e}\")\n            return {\n                'timestamp': datetime.now().isoformat(),\n                'error': str(e)\n            }\n    \n    def _get_network_interfaces(self) -> List[Dict[str, Any]]:\n        \"\"\"Get network interface information\"\"\"\n        interfaces = []\n        \n        try:\n            for interface, stats in psutil.net_if_stats().items():\n                interface_info = {\n                    'name': interface,\n                    'is_up': stats.isup,\n                    'duplex': str(stats.duplex),\n                    'speed': stats.speed,\n                    'mtu': stats.mtu\n                }\n                \n                # Get IP addresses\n                addresses = psutil.net_if_addrs().get(interface, [])\n                interface_info['addresses'] = []\n                \n                for addr in addresses:\n                    if addr.family == socket.AF_INET:  # IPv4\n                        interface_info['addresses'].append({\n                            'type': 'IPv4',\n                            'address': addr.address,\n                            'netmask': addr.netmask\n                        })\n                    elif addr.family == socket.AF_INET6:  # IPv6\n                        interface_info['addresses'].append({\n                            'type': 'IPv6',\n                            'address': addr.address\n                        })\n                \n                interfaces.append(interface_info)\n                \n        except Exception as e:\n            self.logger.error(f\"Error getting network interfaces: {e}\")\n        \n        return interfaces\n    \n    def _get_memory_slots(self) -> Optional[int]:\n        \"\"\"Get number of memory slots (Windows only)\"\"\"\n        if platform.system() != 'Windows':\n            return None\n        \n        try:\n            result = subprocess.run(\n                ['wmic', 'memorychip', 'get', 'capacity'],\n                capture_output=True, text=True, timeout=10\n            )\n            \n            if result.returncode == 0:\n                lines = result.stdout.strip().split('\\n')\n                # Count non-empty lines excluding header\n                slots = len([line for line in lines[1:] if line.strip()])\n                return slots\n                \n        except Exception as e:\n            self.logger.debug(f\"Could not get memory slots: {e}\")\n        \n        return None\n    \n    def _get_windows_info(self) -> Dict[str, Any]:\n        \"\"\"Get Windows-specific system information\"\"\"\n        windows_info = {}\n        \n        try:\n            # Windows version\n            result = subprocess.run(\n                ['wmic', 'os', 'get', 'Caption,Version,BuildNumber', '/format:csv'],\n                capture_output=True, text=True, timeout=10\n            )\n            \n            if result.returncode == 0:\n                lines = result.stdout.strip().split('\\n')\n                if len(lines) > 1:\n                    parts = lines[1].split(',')\n                    if len(parts) >= 4:\n                        windows_info['build_number'] = parts[1]\n                        windows_info['caption'] = parts[2]\n                        windows_info['version'] = parts[3]\n            \n            # System manufacturer and model\n            result = subprocess.run(\n                ['wmic', 'computersystem', 'get', 'Manufacturer,Model', '/format:csv'],\n                capture_output=True, text=True, timeout=10\n            )\n            \n            if result.returncode == 0:\n                lines = result.stdout.strip().split('\\n')\n                if len(lines) > 1:\n                    parts = lines[1].split(',')\n                    if len(parts) >= 3:\n                        windows_info['manufacturer'] = parts[1]\n                        windows_info['model'] = parts[2]\n            \n            # Windows services\n            windows_info['services'] = self._get_windows_services()\n            \n        except Exception as e:\n            self.logger.error(f\"Error getting Windows info: {e}\")\n        \n        return windows_info\n    \n    def _get_windows_services(self) -> List[Dict[str, Any]]:\n        \"\"\"Get Windows services information\"\"\"\n        services = []\n        \n        try:\n            for service in psutil.win_service_iter():\n                try:\n                    service_info = service.as_dict()\n                    services.append({\n                        'name': service_info.get('name'),\n                        'display_name': service_info.get('display_name'),\n                        'status': service_info.get('status')\n                    })\n                except Exception:\n                    continue\n        except (AttributeError, OSError):\n            # Not on Windows or no access\n            pass\n        except Exception as e:\n            self.logger.error(f\"Error getting Windows services: {e}\")\n        \n        return services[:20]  # Limit to first 20 services\n    \n    def _get_linux_info(self) -> Dict[str, Any]:\n        \"\"\"Get Linux-specific system information\"\"\"\n        linux_info = {}\n        \n        try:\n            # Distribution information\n            if os.path.exists('/etc/os-release'):\n                with open('/etc/os-release', 'r') as f:\n                    for line in f:\n                        if line.startswith('PRETTY_NAME='):\n                            linux_info['distribution'] = line.split('=')[1].strip('\"\\n')\n                            break\n            \n            # Kernel version\n            linux_info['kernel'] = platform.release()\n            \n            # Load average\n            if hasattr(os, 'getloadavg'):\n                linux_info['load_average'] = os.getloadavg()\n            \n            # Memory information from /proc/meminfo\n            if os.path.exists('/proc/meminfo'):\n                with open('/proc/meminfo', 'r') as f:\n                    meminfo = {}\n                    for line in f:\n                        parts = line.split(':')\n                        if len(parts) == 2:\n                            key = parts[0].strip()\n                            value = parts[1].strip().split()[0]\n                            if value.isdigit():\n                                meminfo[key] = int(value) * 1024  # Convert KB to bytes\n                    linux_info['meminfo'] = meminfo\n            \n        except Exception as e:\n            self.logger.error(f\"Error getting Linux info: {e}\")\n        \n        return linux_info\n    \n    def _get_macos_info(self) -> Dict[str, Any]:\n        \"\"\"Get macOS-specific system information\"\"\"\n        macos_info = {}\n        \n        try:\n            # macOS version\n            result = subprocess.run(\n                ['sw_vers', '-productVersion'],\n                capture_output=True, text=True, timeout=5\n            )\n            if result.returncode == 0:\n                macos_info['version'] = result.stdout.strip()\n            \n            # Hardware information\n            result = subprocess.run(\n                ['system_profiler', 'SPHardwareDataType'],\n                capture_output=True, text=True, timeout=10\n            )\n            if result.returncode == 0:\n                # Parse hardware info (simplified)\n                lines = result.stdout.split('\\n')\n                for line in lines:\n                    if 'Model Name:' in line:\n                        macos_info['model_name'] = line.split(':')[1].strip()\n                    elif 'Processor Name:' in line:\n                        macos_info['processor_name'] = line.split(':')[1].strip()\n                    elif 'Memory:' in line:\n                        macos_info['memory'] = line.split(':')[1].strip()\n            \n        except Exception as e:\n            self.logger.error(f\"Error getting macOS info: {e}\")\n        \n        return macos_info\n    \n    def _get_uptime(self) -> float:\n        \"\"\"Get system uptime in seconds\"\"\"\n        try:\n            return time.time() - psutil.boot_time()\n        except Exception:\n            return 0.0\n    \n    def start_monitoring(self, interval: int = 5):\n        \"\"\"Start background monitoring\"\"\"\n        if self.monitoring_active:\n            return\n        \n        self.monitoring_interval = max(1, interval)\n        self.monitoring_active = True\n        \n        def monitoring_loop():\n            while self.monitoring_active:\n                try:\n                    stats = self.get_current_stats()\n                    timestamp = datetime.now()\n                    \n                    # Store in history\n                    self.cpu_history.append({\n                        'timestamp': timestamp,\n                        'value': stats['cpu']['usage_percent']\n                    })\n                    \n                    self.memory_history.append({\n                        'timestamp': timestamp,\n                        'value': stats['memory']['percentage']\n                    })\n                    \n                    # Disk usage (average of all drives)\n                    disk_avg = 0\n                    if stats['disk']:\n                        disk_avg = sum(d['percentage'] for d in stats['disk'].values()) / len(stats['disk'])\n                    \n                    self.disk_history.append({\n                        'timestamp': timestamp,\n                        'value': disk_avg\n                    })\n                    \n                    # Network I/O\n                    self.network_history.append({\n                        'timestamp': timestamp,\n                        'bytes_sent': stats['network']['bytes_sent'],\n                        'bytes_recv': stats['network']['bytes_recv']\n                    })\n                    \n                    # Limit history size\n                    self._trim_history()\n                    \n                except Exception as e:\n                    self.logger.error(f\"Error in monitoring loop: {e}\")\n                \n                time.sleep(self.monitoring_interval)\n        \n        self.monitoring_thread = threading.Thread(target=monitoring_loop, daemon=True)\n        self.monitoring_thread.start()\n        \n        self.logger.info(f\"System monitoring started (interval: {self.monitoring_interval}s)\")\n    \n    def stop_monitoring(self):\n        \"\"\"Stop background monitoring\"\"\"\n        if not self.monitoring_active:\n            return\n        \n        self.monitoring_active = False\n        \n        if self.monitoring_thread and self.monitoring_thread.is_alive():\n            self.monitoring_thread.join(timeout=5)\n        \n        self.logger.info(\"System monitoring stopped\")\n    \n    def _trim_history(self):\n        \"\"\"Trim history to prevent memory bloat\"\"\"\n        for history in [self.cpu_history, self.memory_history, self.disk_history, self.network_history]:\n            if len(history) > self.history_limit:\n                history[:] = history[-self.history_limit:]\n    \n    def get_monitoring_history(self, hours: int = 1) -> Dict[str, List[Dict[str, Any]]]:\n        \"\"\"Get monitoring history for the specified hours\"\"\"\n        cutoff_time = datetime.now() - timedelta(hours=hours)\n        \n        def filter_history(history):\n            return [item for item in history if item['timestamp'] > cutoff_time]\n        \n        return {\n            'cpu': filter_history(self.cpu_history),\n            'memory': filter_history(self.memory_history),\n            'disk': filter_history(self.disk_history),\n            'network': filter_history(self.network_history)\n        }\n    \n    def get_performance_summary(self) -> Dict[str, Any]:\n        \"\"\"Get performance summary\"\"\"\n        if not self.cpu_history:\n            return {'error': 'No monitoring data available'}\n        \n        # Calculate averages from recent history\n        recent_cpu = [item['value'] for item in self.cpu_history[-60:]]  # Last 60 samples\n        recent_memory = [item['value'] for item in self.memory_history[-60:]]\n        recent_disk = [item['value'] for item in self.disk_history[-60:]]\n        \n        return {\n            'timestamp': datetime.now().isoformat(),\n            'cpu': {\n                'current': recent_cpu[-1] if recent_cpu else 0,\n                'average': sum(recent_cpu) / len(recent_cpu) if recent_cpu else 0,\n                'max': max(recent_cpu) if recent_cpu else 0,\n                'min': min(recent_cpu) if recent_cpu else 0\n            },\n            'memory': {\n                'current': recent_memory[-1] if recent_memory else 0,\n                'average': sum(recent_memory) / len(recent_memory) if recent_memory else 0,\n                'max': max(recent_memory) if recent_memory else 0,\n                'min': min(recent_memory) if recent_memory else 0\n            },\n            'disk': {\n                'current': recent_disk[-1] if recent_disk else 0,\n                'average': sum(recent_disk) / len(recent_disk) if recent_disk else 0,\n                'max': max(recent_disk) if recent_disk else 0,\n                'min': min(recent_disk) if recent_disk else 0\n            },\n            'monitoring_active': self.monitoring_active,\n            'sample_count': len(self.cpu_history),\n            'uptime_hours': round(self._get_uptime() / 3600, 1)\n        }\n\ndef main():\n    \"\"\"Test system monitor\"\"\"\n    monitor = SystemMonitor()\n    \n    print(\"=== Current Stats ===\")\n    stats = monitor.get_current_stats()\n    print(json.dumps(stats, indent=2, default=str))\n    \n    print(\"\\n=== Performance Summary ===\")\n    # Start monitoring briefly\n    monitor.start_monitoring(1)\n    time.sleep(5)\n    \n    summary = monitor.get_performance_summary()\n    print(json.dumps(summary, indent=2, default=str))\n    \n    monitor.stop_monitoring()\n    \n    print(\"\\n=== System Info (Basic) ===\")\n    info = monitor.get_detailed_info()\n    # Print only basic info to avoid too much output\n    basic_info = {\n        'hostname': info.get('hostname'),\n        'platform': info.get('platform'),\n        'cpu': info.get('cpu'),\n        'memory': info.get('memory'),\n        'uptime_seconds': info.get('uptime_seconds')\n    }\n    print(json.dumps(basic_info, indent=2, default=str))\n\nif __name__ == \"__main__\":\n    main()"}
+                'processes': {
+                    'count': process_count
+                },
+                'load_average': load_avg,
+                'uptime_seconds': self._get_uptime()
+            }
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Error getting current stats: {e}")
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e)
+            }
+    
+    def get_detailed_info(self) -> Dict[str, Any]:
+        """Get detailed system information with caching"""
+        now = time.time()
+        
+        # Check cache
+        if (self._system_info_cache and self._cache_timestamp and 
+            (now - self._cache_timestamp) < self._cache_duration):
+            return self._system_info_cache
+        
+        try:
+            # Basic system info
+            system_info = {
+                'timestamp': datetime.now().isoformat(),
+                'hostname': socket.gethostname(),
+                'platform': {
+                    'system': platform.system(),
+                    'release': platform.release(),
+                    'version': platform.version(),
+                    'machine': platform.machine(),
+                    'processor': platform.processor(),
+                    'architecture': platform.architecture(),
+                    'python_version': platform.python_version()
+                }
+            }
+            
+            # CPU information
+            cpu_info = {
+                'physical_cores': psutil.cpu_count(logical=False),
+                'logical_cores': psutil.cpu_count(logical=True),
+                'max_frequency': None,
+                'min_frequency': None,
+                'current_frequency': None
+            }
+            
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq:
+                cpu_info.update({
+                    'max_frequency': cpu_freq.max,
+                    'min_frequency': cpu_freq.min,
+                    'current_frequency': cpu_freq.current
+                })
+            
+            system_info['cpu'] = cpu_info
+            
+            # Memory information
+            memory = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            
+            system_info['memory'] = {
+                'total_ram': memory.total,
+                'total_swap': swap.total,
+                'ram_slots': self._get_memory_slots()
+            }
+            
+            # Disk information
+            disk_info = []
+            for partition in psutil.disk_partitions():
+                try:
+                    usage = psutil.disk_usage(partition.mountpoint)
+                    disk_info.append({
+                        'device': partition.device,
+                        'mountpoint': partition.mountpoint,
+                        'filesystem': partition.fstype,
+                        'total': usage.total,
+                        'used': usage.used,
+                        'free': usage.free,
+                        'percentage': round((usage.used / usage.total) * 100, 1)
+                    })
+                except (PermissionError, OSError):
+                    continue
+            
+            system_info['disks'] = disk_info
+            
+            # Network information
+            network_info = []
+            for interface, addresses in psutil.net_if_addrs().items():
+                interface_info = {
+                    'interface': interface,
+                    'addresses': []
+                }
+                
+                for addr in addresses:
+                    interface_info['addresses'].append({
+                        'family': str(addr.family),
+                        'address': addr.address,
+                        'netmask': addr.netmask,
+                        'broadcast': addr.broadcast
+                    })
+                
+                # Get interface statistics
+                try:
+                    stats = psutil.net_if_stats()[interface]
+                    interface_info['stats'] = {
+                        'is_up': stats.isup,
+                        'duplex': str(stats.duplex),
+                        'speed': stats.speed,
+                        'mtu': stats.mtu
+                    }
+                except KeyError:
+                    pass
+                
+                network_info.append(interface_info)
+            
+            system_info['network_interfaces'] = network_info
+            
+            # Process information
+            processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status']):
+                try:
+                    processes.append(proc.info)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            # Sort by CPU usage and get top 10
+            processes.sort(key=lambda x: x.get('cpu_percent', 0), reverse=True)
+            system_info['top_processes'] = processes[:10]
+            
+            # Windows-specific information
+            if platform.system() == 'Windows':
+                system_info['windows'] = self._get_windows_info()
+            
+            # Linux-specific information
+            elif platform.system() == 'Linux':
+                system_info['linux'] = self._get_linux_info()
+            
+            # macOS-specific information
+            elif platform.system() == 'Darwin':
+                system_info['macos'] = self._get_macos_info()
+            
+            # Boot time and uptime
+            boot_time = psutil.boot_time()
+            system_info['boot_time'] = datetime.fromtimestamp(boot_time).isoformat()
+            system_info['uptime_seconds'] = time.time() - boot_time
+            
+            # Current stats
+            system_info['current_stats'] = self.get_current_stats()
+            
+            # Cache the result
+            self._system_info_cache = system_info
+            self._cache_timestamp = now
+            
+            return system_info
+            
+        except Exception as e:
+            self.logger.error(f"Error getting detailed system info: {e}")
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e)
+            }
+    
+    def _get_network_interfaces(self) -> List[Dict[str, Any]]:
+        """Get network interface information"""
+        interfaces = []
+        
+        try:
+            for interface, stats in psutil.net_if_stats().items():
+                interface_info = {
+                    'name': interface,
+                    'is_up': stats.isup,
+                    'duplex': str(stats.duplex),
+                    'speed': stats.speed,
+                    'mtu': stats.mtu
+                }
+                
+                # Get IP addresses
+                addresses = psutil.net_if_addrs().get(interface, [])
+                interface_info['addresses'] = []
+                
+                for addr in addresses:
+                    if addr.family == socket.AF_INET:  # IPv4
+                        interface_info['addresses'].append({
+                            'type': 'IPv4',
+                            'address': addr.address,
+                            'netmask': addr.netmask
+                        })
+                    elif addr.family == socket.AF_INET6:  # IPv6
+                        interface_info['addresses'].append({
+                            'type': 'IPv6',
+                            'address': addr.address
+                        })
+                
+                interfaces.append(interface_info)
+                
+        except Exception as e:
+            self.logger.error(f"Error getting network interfaces: {e}")
+        
+        return interfaces
+    
+    def _get_memory_slots(self) -> Optional[int]:
+        """Get number of memory slots (Windows only)"""
+        if platform.system() != 'Windows':
+            return None
+        
+        try:
+            result = subprocess.run(
+                ['wmic', 'memorychip', 'get', 'capacity'],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\\n')
+                # Count non-empty lines excluding header
+                slots = len([line for line in lines[1:] if line.strip()])
+                return slots
+                
+        except Exception as e:
+            self.logger.debug(f"Could not get memory slots: {e}")
+        
+        return None
+    
+    def _get_windows_info(self) -> Dict[str, Any]:
+        """Get Windows-specific system information"""
+        windows_info = {}
+        
+        try:
+            # Windows version
+            result = subprocess.run(
+                ['wmic', 'os', 'get', 'Caption,Version,BuildNumber', '/format:csv'],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\\n')
+                if len(lines) > 1:
+                    parts = lines[1].split(',')
+                    if len(parts) >= 4:
+                        windows_info['build_number'] = parts[1]
+                        windows_info['caption'] = parts[2]
+                        windows_info['version'] = parts[3]
+            
+            # System manufacturer and model
+            result = subprocess.run(
+                ['wmic', 'computersystem', 'get', 'Manufacturer,Model', '/format:csv'],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\\n')
+                if len(lines) > 1:
+                    parts = lines[1].split(',')
+                    if len(parts) >= 3:
+                        windows_info['manufacturer'] = parts[1]
+                        windows_info['model'] = parts[2]
+            
+            # Windows services
+            windows_info['services'] = self._get_windows_services()
+            
+        except Exception as e:
+            self.logger.error(f"Error getting Windows info: {e}")
+        
+        return windows_info
+    
+    def _get_windows_services(self) -> List[Dict[str, Any]]:
+        """Get Windows services information"""
+        services = []
+        
+        try:
+            for service in psutil.win_service_iter():
+                try:
+                    service_info = service.as_dict()
+                    services.append({
+                        'name': service_info.get('name'),
+                        'display_name': service_info.get('display_name'),
+                        'status': service_info.get('status')
+                    })
+                except Exception:
+                    continue
+        except (AttributeError, OSError):
+            # Not on Windows or no access
+            pass
+        except Exception as e:
+            self.logger.error(f"Error getting Windows services: {e}")
+        
+        return services[:20]  # Limit to first 20 services
+    
+    def _get_linux_info(self) -> Dict[str, Any]:
+        """Get Linux-specific system information"""
+        linux_info = {}
+        
+        try:
+            # Distribution information
+            if os.path.exists('/etc/os-release'):
+                with open('/etc/os-release', 'r') as f:
+                    for line in f:
+                        if line.startswith('PRETTY_NAME='):
+                            linux_info['distribution'] = line.split('=')[1].strip('"\\n')
+                            break
+            
+            # Kernel version
+            linux_info['kernel'] = platform.release()
+            
+            # Load average
+            if hasattr(os, 'getloadavg'):
+                linux_info['load_average'] = os.getloadavg()
+            
+            # Memory information from /proc/meminfo
+            if os.path.exists('/proc/meminfo'):
+                with open('/proc/meminfo', 'r') as f:
+                    meminfo = {}
+                    for line in f:
+                        parts = line.split(':')
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            value = parts[1].strip().split()[0]
+                            if value.isdigit():
+                                meminfo[key] = int(value) * 1024  # Convert KB to bytes
+                    linux_info['meminfo'] = meminfo
+            
+        except Exception as e:
+            self.logger.error(f"Error getting Linux info: {e}")
+        
+        return linux_info
+    
+    def _get_macos_info(self) -> Dict[str, Any]:
+        """Get macOS-specific system information"""
+        macos_info = {}
+        
+        try:
+            # macOS version
+            result = subprocess.run(
+                ['sw_vers', '-productVersion'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                macos_info['version'] = result.stdout.strip()
+            
+            # Hardware information
+            result = subprocess.run(
+                ['system_profiler', 'SPHardwareDataType'],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                # Parse hardware info (simplified)
+                lines = result.stdout.split('\\n')
+                for line in lines:
+                    if 'Model Name:' in line:
+                        macos_info['model_name'] = line.split(':')[1].strip()
+                    elif 'Processor Name:' in line:
+                        macos_info['processor_name'] = line.split(':')[1].strip()
+                    elif 'Memory:' in line:
+                        macos_info['memory'] = line.split(':')[1].strip()
+            
+        except Exception as e:
+            self.logger.error(f"Error getting macOS info: {e}")
+        
+        return macos_info
+    
+    def _get_uptime(self) -> float:
+        """Get system uptime in seconds"""
+        try:
+            return time.time() - psutil.boot_time()
+        except Exception:
+            return 0.0
+    
+    def start_monitoring(self, interval: int = 5):
+        """Start background monitoring"""
+        if self.monitoring_active:
+            return
+        
+        self.monitoring_interval = max(1, interval)
+        self.monitoring_active = True
+        
+        def monitoring_loop():
+            while self.monitoring_active:
+                try:
+                    stats = self.get_current_stats()
+                    timestamp = datetime.now()
+                    
+                    # Store in history
+                    self.cpu_history.append({
+                        'timestamp': timestamp,
+                        'value': stats['cpu']['usage_percent']
+                    })
+                    
+                    self.memory_history.append({
+                        'timestamp': timestamp,
+                        'value': stats['memory']['percentage']
+                    })
+                    
+                    # Disk usage (average of all drives)
+                    disk_avg = 0
+                    if stats['disk']:
+                        disk_avg = sum(d['percentage'] for d in stats['disk'].values()) / len(stats['disk'])
+                    
+                    self.disk_history.append({
+                        'timestamp': timestamp,
+                        'value': disk_avg
+                    })
+                    
+                    # Network I/O
+                    self.network_history.append({
+                        'timestamp': timestamp,
+                        'bytes_sent': stats['network']['bytes_sent'],
+                        'bytes_recv': stats['network']['bytes_recv']
+                    })
+                    
+                    # Limit history size
+                    self._trim_history()
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in monitoring loop: {e}")
+                
+                time.sleep(self.monitoring_interval)
+        
+        self.monitoring_thread = threading.Thread(target=monitoring_loop, daemon=True)
+        self.monitoring_thread.start()
+        
+        self.logger.info(f"System monitoring started (interval: {self.monitoring_interval}s)")
+    
+    def stop_monitoring(self):
+        """Stop background monitoring"""
+        if not self.monitoring_active:
+            return
+        
+        self.monitoring_active = False
+        
+        if self.monitoring_thread and self.monitoring_thread.is_alive():
+            self.monitoring_thread.join(timeout=5)
+        
+        self.logger.info("System monitoring stopped")
+    
+    def _trim_history(self):
+        """Trim history to prevent memory bloat"""
+        for history in [self.cpu_history, self.memory_history, self.disk_history, self.network_history]:
+            if len(history) > self.history_limit:
+                history[:] = history[-self.history_limit:]
+    
+    def get_monitoring_history(self, hours: int = 1) -> Dict[str, List[Dict[str, Any]]]:
+        """Get monitoring history for the specified hours"""
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        
+        def filter_history(history):
+            return [item for item in history if item['timestamp'] > cutoff_time]
+        
+        return {
+            'cpu': filter_history(self.cpu_history),
+            'memory': filter_history(self.memory_history),
+            'disk': filter_history(self.disk_history),
+            'network': filter_history(self.network_history)
+        }
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary"""
+        if not self.cpu_history:
+            return {'error': 'No monitoring data available'}
+        
+        # Calculate averages from recent history
+        recent_cpu = [item['value'] for item in self.cpu_history[-60:]]  # Last 60 samples
+        recent_memory = [item['value'] for item in self.memory_history[-60:]]
+        recent_disk = [item['value'] for item in self.disk_history[-60:]]
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'cpu': {
+                'current': recent_cpu[-1] if recent_cpu else 0,
+                'average': sum(recent_cpu) / len(recent_cpu) if recent_cpu else 0,
+                'max': max(recent_cpu) if recent_cpu else 0,
+                'min': min(recent_cpu) if recent_cpu else 0
+            },
+            'memory': {
+                'current': recent_memory[-1] if recent_memory else 0,
+                'average': sum(recent_memory) / len(recent_memory) if recent_memory else 0,
+                'max': max(recent_memory) if recent_memory else 0,
+                'min': min(recent_memory) if recent_memory else 0
+            },
+            'disk': {
+                'current': recent_disk[-1] if recent_disk else 0,
+                'average': sum(recent_disk) / len(recent_disk) if recent_disk else 0,
+                'max': max(recent_disk) if recent_disk else 0,
+                'min': min(recent_disk) if recent_disk else 0
+            },
+            'monitoring_active': self.monitoring_active,
+            'sample_count': len(self.cpu_history),
+            'uptime_hours': round(self._get_uptime() / 3600, 1)
+        }
+
+def main():
+    """Test system monitor"""
+    monitor = SystemMonitor()
+    
+    print("=== Current Stats ===")
+    stats = monitor.get_current_stats()
+    print(json.dumps(stats, indent=2, default=str))
+    
+    print("\\n=== Performance Summary ===")
+    # Start monitoring briefly
+    monitor.start_monitoring(1)
+    time.sleep(5)
+    
+    summary = monitor.get_performance_summary()
+    print(json.dumps(summary, indent=2, default=str))
+    
+    monitor.stop_monitoring()
+    
+    print("\\n=== System Info (Basic) ===")
+    info = monitor.get_detailed_info()
+    # Print only basic info to avoid too much output
+    basic_info = {
+        'hostname': info.get('hostname'),
+        'platform': info.get('platform'),
+        'cpu': info.get('cpu'),
+        'memory': info.get('memory'),
+        'uptime_seconds': info.get('uptime_seconds')
+    }
+    print(json.dumps(basic_info, indent=2, default=str))
+
+if __name__ == "__main__":
+    main()

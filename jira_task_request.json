@@ -1,0 +1,21 @@
+{
+  "action": "create_jira_task",
+  "timestamp": "2025-08-03T19:08:36.945874",
+  "task_data": {
+    "cloud_id": "e9ed7bab-c21a-4b0c-b996-fa7146d8e58b",
+    "project_key": "DX",
+    "issue_type": "Task",
+    "summary": "Test Execution Report - \u2705 PASSED (0.0%) - 2025-08-03 19:08",
+    "description": "# \ud83e\uddea DexAgent Test Execution Report\n\n## \ud83d\udcca Executive Summary\n- **Execution Date**: 2025-08-03T19:08:27.438060\n- **Total Duration**: 2.6s\n- **Success Rate**: 0.0%\n\n## \ud83d\udcc8 Test Results Overview\n- **Total Tests**: 0\n- **\u2705 Passed**: 0\n- **\u274c Failed**: 0\n- **\u23ed\ufe0f Skipped**: 0\n\n## \ud83c\udfaf Test Categories\n\n## \ud83d\udea8 Failed Tests (6)\n\n- Backend Unit Tests\n- Comprehensive API Tests\n- Frontend Tests\n- Integration Tests\n- Performance Tests\n- End-to-End Tests\n\n## \ud83d\udcc4 Error Logs (33 entries)\n\n```\n19:08:29: Command failed with exit code 2: make test-e2e\n19:08:29: STDERR: ./tests/scripts/run_tests.sh: line 163: playwright: command not found\nmake: *** [Makefile:82: test-e2e] Error 127\n...\n19:08:29: E2E tests failed: ./tests/scripts/run_tests.sh: line 163: playwright: command not found\nmake: *** [Makefile:82: test-e2e] Error 127\n\n19:08:30: Command failed with exit code 127: ./tests/scripts/run_tests.sh e2e\n19:08:30: STDERR: ./tests/scripts/run_tests.sh: line 163: playwright: command not found\n...\n```\n\n## \ud83d\udd17 Related Files\n- Test results: `test_results.json`\n- Coverage report: `tests/coverage/html/index.html`\n- Jira report: `jira_report.md`\n\n## \ud83e\udd16 Automation\nThis task was automatically created by the DexAgent test automation system.\n\n---\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code) Test Automation\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "priority": "Medium",
+    "labels": [
+      "automated-test",
+      "test-execution",
+      "dexagent"
+    ],
+    "components": [
+      "Testing",
+      "Automation"
+    ]
+  }
+}

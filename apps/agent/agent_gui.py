@@ -61,7 +61,7 @@ class DexAgentsGUI:
         
         # Default configuration
         default_config = {
-            "server_url": "http://localhost:8000",
+            "server_url": "http://localhost:8080",
             "api_token": "your-secret-key-here",
             "agent_name": socket.gethostname(),
             "tags": ["windows", "gui-agent"],
@@ -114,7 +114,7 @@ class DexAgentsGUI:
         
         # Server URL
         ttk.Label(conn_frame, text="Server URL:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
-        self.server_url_var = tk.StringVar(value=self.config.get("server_url", "http://localhost:8000"))
+        self.server_url_var = tk.StringVar(value=self.config.get("server_url", "http://localhost:8080"))
         server_entry = ttk.Entry(conn_frame, textvariable=self.server_url_var, width=40)
         server_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
         
@@ -221,7 +221,7 @@ class DexAgentsGUI:
     
     def load_config_to_gui(self):
         """Load configuration into GUI fields"""
-        self.server_url_var.set(self.config.get("server_url", "http://localhost:8000"))
+        self.server_url_var.set(self.config.get("server_url", "http://localhost:8080"))
         self.api_token_var.set(self.config.get("api_token", "your-secret-key-here"))
         self.agent_name_var.set(self.config.get("agent_name", socket.gethostname()))
         self.tags_var.set(",".join(self.config.get("tags", [])))
@@ -434,7 +434,7 @@ class DexAgentsGUI:
                 # Send HTTP heartbeat if agent is registered
                 if self.agent_id:
                     try:
-                        server_url = self.config.get("server_url", "http://localhost:8000")
+                        server_url = self.config.get("server_url", "http://localhost:8080")
                         api_token = self.config.get("api_token", "your-secret-key-here")
                         
                         headers = {
@@ -574,7 +574,7 @@ class DexAgentsGUI:
                 # Send HTTP heartbeat if agent is registered
                 if self.agent_id:
                     try:
-                        server_url = self.config.get("server_url", "http://localhost:8000")
+                        server_url = self.config.get("server_url", "http://localhost:8080")
                         api_token = self.config.get("api_token", "your-secret-key-here")
                         
                         headers = {

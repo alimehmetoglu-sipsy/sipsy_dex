@@ -146,7 +146,7 @@ class TestOrchestrator:
             self.log_success("Backend is running")
         
         # Check if pytest is available
-        success, _, _ = self.run_command("python -c 'import pytest'", timeout=5)
+        success, _, _ = self.run_command("python3 -c 'import pytest'", timeout=5)
         if not success:
             self.log_error("pytest not available. Installing...")
             success, _, _ = self.run_command("pip install -r tests/requirements.txt")
@@ -192,7 +192,7 @@ class TestOrchestrator:
             # Try fallback with direct pytest
             self.log_info("Trying fallback pytest command...")
             success, stdout, stderr = self.run_command(
-                "python -m pytest apps/backend/tests/ -v --cov=app --cov-report=json:tests/coverage/backend_coverage.json",
+                "python3 -m pytest apps/backend/tests/ -v --cov=app --cov-report=json:tests/coverage/backend_coverage.json",
                 timeout=300
             )
             if success:
@@ -203,7 +203,7 @@ class TestOrchestrator:
         # Run comprehensive API tests
         self.log_info("Running comprehensive API tests...")
         success, stdout, stderr = self.run_command(
-            "python apps/backend/comprehensive_api_test.py",
+            "python3 apps/backend/comprehensive_api_test.py",
             timeout=180
         )
         

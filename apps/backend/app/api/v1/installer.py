@@ -14,7 +14,37 @@ async def create_agent_installer(
     config: AgentInstallerConfig,
     background_tasks: BackgroundTasks
 ):
-    """Create a pre-built Windows .exe agent"""
+    """Create a modern self-extracting installer with GUI and tray support"""
+    try:
+        # Use the new self-extracting installer
+        installer_path = AgentInstallerService.create_self_extracting_installer(config)
+        
+        # Add cleanup task
+        background_tasks.add_task(AgentInstallerService.cleanup_temp_files, installer_path)
+        
+        # Determine file type and media type
+        if installer_path.endswith('.exe'):
+            media_type = "application/octet-stream"
+            filename = f"DexAgents_Agent_v3.0_Installer_{config.agent_name or 'Windows'}.exe"
+        else:
+            media_type = "application/zip"
+            filename = f"DexAgents_Agent_v3.0_Installer_{config.agent_name or 'Windows'}.zip"
+        
+        return FileResponse(
+            path=installer_path,
+            filename=filename,
+            media_type=media_type
+        )
+    except Exception as e:
+        logger.error(f"Error creating self-extracting installer: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create modern agent installer")
+
+@router.post("/create-legacy")
+async def create_legacy_agent_installer(
+    config: AgentInstallerConfig,
+    background_tasks: BackgroundTasks
+):
+    """Create a legacy pre-built Windows .exe agent (old method)"""
     try:
         exe_path = AgentInstallerService.create_prebuilt_exe(config)
         
@@ -23,12 +53,12 @@ async def create_agent_installer(
         
         return FileResponse(
             path=exe_path,
-            filename=f"DexAgent_{config.agent_name or 'Windows'}.exe",
+            filename=f"DexAgent_Legacy_{config.agent_name or 'Windows'}.exe",
             media_type="application/zip"
         )
     except Exception as e:
-        logger.error(f"Error creating pre-built .exe: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create .exe agent")
+        logger.error(f"Error creating legacy pre-built .exe: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create legacy .exe agent")
 
 @router.post("/create-python")
 async def create_python_agent(

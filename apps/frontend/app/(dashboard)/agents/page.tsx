@@ -20,6 +20,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import Link from "next/link"
 import { apiClient, Agent, AgentInstallerConfig, InstallerConfig } from "@/lib/api"
+import { useAuth } from "@/contexts/AuthContext"
 import { useToast } from "@/hooks/use-toast"
 
 export default function AgentsPage() {
@@ -32,6 +33,7 @@ export default function AgentsPage() {
   const [installerConfig, setInstallerConfig] = useState<InstallerConfig | null>(null)
   const [downloadingAgent, setDownloadingAgent] = useState(false)
   const { toast } = useToast()
+  const { token } = useAuth()
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -127,22 +129,33 @@ export default function AgentsPage() {
     try {
       setDownloadingAgent(true)
       
+      // Generate unique agent name for localhost
+      const hostname = "localhost"
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+      
       const config: AgentInstallerConfig = {
-        server_url: installerConfig?.server_url || "http://localhost:8080",
-        api_token: installerConfig?.api_token || "your-secret-key-here",
-        agent_name: "DexAgent",
-        tags: installerConfig?.tags || [],
+        server_url: "http://localhost:8080",
+        api_token: token || "your-api-token-here",
+        agent_name: `agent_${hostname}_${timestamp}`,
+        tags: ["localhost", "development", "modern-gui"],
         auto_start: true,
         run_as_service: false
       }
 
+      console.log("Downloading modern agent with config:", config)
       const blob = await apiClient.createPythonAgent(config)
+      console.log("Blob received:", blob, "Size:", blob.size)
+      
+      // Validate blob
+      if (!blob || blob.size === 0) {
+        throw new Error("Received empty installer package")
+      }
       
       // Create download link
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `DexAgent_Python_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`
+      a.download = `DexAgent_Modern_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -150,13 +163,13 @@ export default function AgentsPage() {
       
       toast({
         title: "Success",
-        description: "Python agent package downloaded successfully",
+        description: "Modern agent installer downloaded successfully",
       })
     } catch (err) {
       console.error("Download error:", err)
       toast({
         title: "Error",
-        description: `Failed to download Python agent package: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        description: `Failed to download modern agent installer: ${err instanceof Error ? err.message : 'Unknown error'}`,
         variant: "destructive",
       })
     } finally {

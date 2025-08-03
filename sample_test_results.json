@@ -1,0 +1,91 @@
+{
+  "execution_timestamp": "2025-08-03T17:45:00.000Z",
+  "total_duration": 125.8,
+  "categories": {
+    "backend": {
+      "tests": 18,
+      "passed": 16,
+      "failed": 2,
+      "duration": 45.2,
+      "coverage": 84.5,
+      "unit_tests": {
+        "passed": 8,
+        "failed": 1
+      },
+      "api_tests": {
+        "passed": 8,
+        "failed": 1
+      }
+    },
+    "frontend": {
+      "tests": 12,
+      "passed": 10,
+      "failed": 2,
+      "duration": 32.1,
+      "coverage": 78.3,
+      "unit_tests": {
+        "passed": 6,
+        "failed": 1
+      },
+      "e2e_tests": {
+        "passed": 4,
+        "failed": 1
+      }
+    },
+    "integration": {
+      "tests": 8,
+      "passed": 7,
+      "failed": 1,
+      "duration": 28.4
+    },
+    "performance": {
+      "tests": 5,
+      "passed": 4,
+      "failed": 1,
+      "duration": 15.3,
+      "metrics": {
+        "api_response_time": 1.8,
+        "websocket_latency": 0.4,
+        "memory_usage": 485.2
+      }
+    },
+    "e2e": {
+      "tests": 6,
+      "passed": 5,
+      "failed": 1,
+      "duration": 34.8
+    }
+  },
+  "total_summary": {
+    "tests": 49,
+    "passed": 42,
+    "failed": 7,
+    "skipped": 0
+  },
+  "coverage_summary": {
+    "backend": 84.5,
+    "frontend": 78.3,
+    "overall": 81.4
+  },
+  "performance_metrics": {
+    "api_response_time": 1.8,
+    "websocket_latency": 0.4,
+    "memory_usage": 485.2,
+    "command_execution_time": 4.2
+  },
+  "failed_tests": [
+    "Backend Unit Tests - Database Connection",
+    "Backend API Tests - Authentication Edge Case",
+    "Frontend Unit Tests - Component Render",
+    "Frontend E2E Tests - Login Flow",
+    "Integration Tests - Agent Registration",
+    "Performance Tests - Load Testing",
+    "E2E Tests - Command Execution"
+  ],
+  "error_logs": [
+    "17:35:42: Database connection timeout in test environment",
+    "17:36:15: Authentication test failed - invalid token format",
+    "17:38:22: Component render test - missing prop validation"
+  ],
+  "jira_task_id": "DX-30"
+}

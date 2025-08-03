@@ -1,0 +1,110 @@
+{
+  "execution_timestamp": "2025-08-03T19:51:23.641391",
+  "total_duration": 137.55363059043884,
+  "categories": {
+    "backend": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "duration": 7.96002984046936,
+      "coverage": 0,
+      "unit_tests": {
+        "passed": 0,
+        "failed": 0
+      },
+      "api_tests": {
+        "passed": 0,
+        "failed": 0
+      }
+    },
+    "frontend": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "duration": 124.66695761680603,
+      "coverage": 0,
+      "unit_tests": {
+        "passed": 0,
+        "failed": 0
+      },
+      "e2e_tests": {
+        "passed": 0,
+        "failed": 0
+      }
+    },
+    "integration": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "duration": 1.333853006362915
+    },
+    "performance": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "duration": 1.5305755138397217,
+      "metrics": {
+        "api_response_time": 0,
+        "websocket_latency": 0,
+        "memory_usage": 0
+      }
+    },
+    "e2e": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "duration": 1.9423739910125732
+    }
+  },
+  "total_summary": {
+    "tests": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "coverage_summary": {
+    "backend": 0,
+    "frontend": 0,
+    "overall": 0
+  },
+  "performance_metrics": {
+    "api_response_time": 0,
+    "websocket_latency": 0,
+    "memory_usage": 0,
+    "command_execution_time": 0
+  },
+  "failed_tests": [
+    "Backend Unit Tests",
+    "Comprehensive API Tests",
+    "Frontend Tests",
+    "Integration Tests",
+    "Performance Tests",
+    "End-to-End Tests"
+  ],
+  "error_logs": [
+    "19:51:26: Command failed with exit code 2: make test-backend",
+    "19:51:26: STDERR: make: *** [Makefile:92: test-backend] Error 1\n...",
+    "19:51:26: Backend unit tests failed: make: *** [Makefile:92: test-backend] Error 1\n",
+    "19:51:29: Command failed with exit code 3: python3 -m pytest apps/backend/tests/ -v --cov=app --cov-report=json:tests/coverage/backend_coverage.json",
+    "19:51:31: Command failed with exit code 1: python3 apps/backend/comprehensive_api_test.py",
+    "19:51:31: API tests failed: ",
+    "19:53:34: Command failed with exit code 2: make test-frontend",
+    "19:53:34: STDERR: \u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m \u001b[33m\u001b[1m\u26a0\u001b[22m\u001b[39m Port 3000 is in use, trying 3001 instead.\n\u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m \u001b[33m\u001b[1m\u26a0\u001b[22m\u001b[39m Port 3001 is in use, trying 3002 instead.\nmake: *** [Makefile:99: test-frontend] Error 1\n...",
+    "19:53:34: Frontend tests failed: \u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m \u001b[33m\u001b[1m\u26a0\u001b[22m\u001b[39m Port 3000 is in use, trying 3001 instead.\n\u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m \u001b[33m\u001b[1m\u26a0\u001b[22m\u001b[39m Port 3001 is in use, trying 3002 instead.\nmake: *** [Makefile:99: test-frontend] Error 1\n",
+    "19:53:36: Command failed with exit code 1: npm run test:e2e",
+    "19:53:36: STDERR: \u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m \u001b[33m\u001b[1m\u26a0\u001b[22m\u001b[39m Port 3000 is in use, trying 3001 instead.\n\u001b[1A\u001b[2K\u001b[2m[WebServer] \u001b[22m[Error: EACCES: permission denied, unlink '/home/ali/sipsy_dex/apps/frontend/.next/server/app-paths-manifest.json'] {\n\u001b[2m[WebServer] \u001b[22m  errno: \u001b[33m-13\u001b[39m,\n\u001b[2m[WebServer] \u001b[22m  code: \u001b[32m'EACCES'\u001b[39m,\n\u001b[2m[WebServer] \u001b[22m  syscall: \u001b[32m'unlink'\u001b[39m,\n\u001b[2m[WebServer] \u001b[22m  path: \u001b[32m'/home/ali/sipsy_dex/apps/frontend/.next/server/app-paths-manifest.json'\u001b[39m\n\u001b[...",
+    "19:53:36: Command failed with exit code 2: make test-integration",
+    "19:53:36: STDERR: make: *** [Makefile:72: test-integration] Error 1\n...",
+    "19:53:36: Integration tests failed: make: *** [Makefile:72: test-integration] Error 1\n",
+    "19:53:37: Command failed with exit code 1: ./tests/scripts/run_tests.sh integration",
+    "19:53:38: Command failed with exit code 2: make test-performance",
+    "19:53:38: STDERR: make: *** [Makefile:77: test-performance] Error 1\n...",
+    "19:53:38: Performance tests failed: make: *** [Makefile:77: test-performance] Error 1\n",
+    "19:53:39: Command failed with exit code 1: ./tests/scripts/run_tests.sh performance",
+    "19:53:40: Command failed with exit code 2: make test-e2e",
+    "19:53:40: STDERR: make: *** [Makefile:82: test-e2e] Error 1\n...",
+    "19:53:40: E2E tests failed: make: *** [Makefile:82: test-e2e] Error 1\n",
+    "19:53:41: Command failed with exit code 1: ./tests/scripts/run_tests.sh e2e"
+  ],
+  "jira_task_id": "DX-30"
+}

@@ -184,12 +184,73 @@ class DexAgentsWindowsAgent:
         try:
             data = json.loads(message)
             message_type = data.get("type")
-            message_data = data.get("data", {})
+            request_id = data.get("request_id")
             
-            logger.info(f"Received message: {message_type}")
+            logger.info(f"Received message: {message_type}, request_id: {request_id}")
             
-            if message_type == "command":
-                # Execute PowerShell command
+            if message_type == "powershell_command":
+                # Handle PowerShell command (new format from backend)
+                command = data.get("command")
+                timeout = data.get("timeout", 30)
+                working_directory = data.get("working_directory")
+                response_type = data.get("response_type", "command_response")
+                
+                if command and request_id:
+                    logger.info(f"Executing PowerShell command for request {request_id}")
+                    result = await self.execute_powershell_command(
+                        command, timeout, working_directory
+                    )
+                    
+                    # Parse JSON output if it's a structured response
+                    if response_type in ["process_command", "system_info_update"]:
+                        try:
+                            # Try to parse the output as JSON
+                            if result["success"] and result["output"]:
+                                parsed_output = json.loads(result["output"])
+                                
+                                # Send structured response back
+                                await self.send_response(request_id, {
+                                    "success": True,
+                                    "timestamp": datetime.now().isoformat(),
+                                    **parsed_output
+                                })
+                            else:
+                                # Send error response
+                                await self.send_response(request_id, {
+                                    "success": False,
+                                    "error": result["error"] or "Command failed",
+                                    "timestamp": datetime.now().isoformat()
+                                })
+                        except json.JSONDecodeError:
+                            # If JSON parsing fails, send raw output
+                            await self.send_response(request_id, {
+                                "success": result["success"],
+                                "output": result["output"],
+                                "error": result["error"],
+                                "timestamp": datetime.now().isoformat()
+                            })
+                    else:
+                        # Send regular command response
+                        await self.send_response(request_id, {
+                            "success": result["success"],
+                            "output": result["output"],
+                            "error": result["error"],
+                            "execution_time": result["execution_time"],
+                            "timestamp": datetime.now().isoformat(),
+                            "command": command
+                        })
+                else:
+                    logger.error("Invalid PowerShell command message format")
+                    if request_id:
+                        await self.send_response(request_id, {
+                            "success": False,
+                            "error": "Invalid command format",
+                            "timestamp": datetime.now().isoformat()
+                        })
+            
+            elif message_type == "command":
+                # Legacy command format support
+                message_data = data.get("data", {})
                 command = message_data.get("command")
                 command_id = message_data.get("command_id")
                 timeout = message_data.get("timeout", 30)
@@ -223,6 +284,22 @@ class DexAgentsWindowsAgent:
         except Exception as e:
             logger.error(f"Error handling message: {str(e)}")
     
+    async def send_response(self, request_id: str, response_data: Dict[str, Any]):
+        """Send response back to server for a specific request"""
+        try:
+            message = {
+                "type": "command_response",
+                "request_id": request_id,
+                "timestamp": datetime.now().isoformat(),
+                **response_data
+            }
+            
+            await self.websocket.send(json.dumps(message))
+            logger.info(f"Sent response for request {request_id}: success={response_data.get('success', False)}")
+            
+        except Exception as e:
+            logger.error(f"Error sending response for {request_id}: {str(e)}")
+    
     async def send_heartbeat(self):
         """Send heartbeat with system info"""
         system_info = self.get_system_info()
@@ -241,10 +318,16 @@ class DexAgentsWindowsAgent:
             "hostname": system_info.get("hostname", socket.gethostname()),
             "ip": socket.gethostbyname(socket.gethostname()),
             "os": platform.system(),
-            "version": system_info.get("agent_version", "1.0.0"),
+            "version": system_info.get("agent_version", "2.0.0"),
             "status": "online",
-            "tags": self.config["tags"],
-            "system_info": system_info
+            "tags": self.config["tags"] + ["process_management"],
+            "system_info": system_info,
+            "capabilities": [
+                "powershell_execution",
+                "system_monitoring", 
+                "process_management",
+                "file_operations"
+            ]
         }
         
         await self.send_message("register", registration_data)

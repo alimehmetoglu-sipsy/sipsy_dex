@@ -521,7 +521,11 @@ async def get_agent_processes(agent_id: str, token: str = Depends(verify_token))
             raise HTTPException(status_code=404, detail="Agent not found")
         
         # Check if agent is connected via WebSocket
-        if not websocket_manager.is_agent_connected(agent_id):
+        is_connected = websocket_manager.is_agent_connected(agent_id)
+        logger.info(f"Agent {agent_id} connection check: {is_connected}")
+        logger.info(f"Connected agents: {list(websocket_manager.agent_connections.keys())}")
+        
+        if not is_connected:
             raise HTTPException(status_code=400, detail="Agent is not connected")
         
         # Send process list request to agent via WebSocket

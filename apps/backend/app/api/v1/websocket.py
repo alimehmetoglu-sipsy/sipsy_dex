@@ -268,6 +268,43 @@ async def handle_agent_message(agent_id: str, message: Dict[str, Any]):
         except Exception as e:
             logger.error(f"Error updating agent {agent_id} system info: {str(e)}")
     
+    elif message_type == "command_response":
+        # Handle command response from modern agent
+        request_id = message.get("request_id")
+        success = message.get("success", False)
+        output = message.get("output", "")
+        error = message.get("error", "")
+        execution_time = message.get("execution_time", 0.0)
+        
+        logger.info(f"Command response received from agent {agent_id}, request_id: {request_id}")
+        logger.info(f"Command response: success={success}, output_len={len(str(output))}")
+        
+        if request_id:
+            # For structured responses (like process commands), preserve all fields
+            response_data = {
+                "success": success,
+                "output": output,
+                "error": error,
+                "execution_time": execution_time,
+                "timestamp": message.get("timestamp", datetime.now().isoformat())
+            }
+            
+            # If this is a structured response with additional data, include it
+            if "processes" in message:
+                response_data["processes"] = message["processes"]
+                logger.info(f"Structured response with {len(message['processes'])} processes")
+            
+            # Include any other structured data fields
+            for key, value in message.items():
+                if key not in ["type", "request_id", "success", "output", "error", "execution_time", "timestamp"]:
+                    response_data[key] = value
+                    logger.debug(f"Added structured field {key} to response")
+            
+            websocket_manager.store_command_response(request_id, response_data)
+            logger.info(f"Command response stored for request_id: {request_id}")
+        else:
+            logger.warning(f"No request_id in command response from agent {agent_id}")
+        
     elif message_type == "pong":
         # Handle pong response
         logger.debug(f"Pong received from agent {agent_id}")

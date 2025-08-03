@@ -271,4 +271,249 @@ class PowerShellExecutor:
                     'error': 'Command blocked by security policy',
                     'exit_code': -1,
                     'execution_time': 0
-                }\n            \n            # Sanitize working directory\n            safe_working_dir = self._sanitize_working_directory(working_directory)\n            \n            # Prepare command\n            cmd_args = self._prepare_command(command)\n            \n            # Track process\n            process_info = self._create_process_info(command, process_id)\n            self.active_processes[process_id] = process_info\n            \n            try:\n                # Create subprocess\n                process = await asyncio.create_subprocess_exec(\n                    *cmd_args,\n                    stdout=asyncio.subprocess.PIPE,\n                    stderr=asyncio.subprocess.PIPE,\n                    cwd=safe_working_dir,\n                    limit=self.max_output_size\n                )\n                \n                process_info['pid'] = process.pid\n                \n                try:\n                    # Wait for completion with timeout\n                    stdout, stderr = await asyncio.wait_for(\n                        process.communicate(),\n                        timeout=timeout\n                    )\n                    \n                    execution_time = (datetime.now() - start_time).total_seconds()\n                    \n                    # Decode output\n                    output = stdout.decode('utf-8', errors='ignore') if stdout else ''\n                    error = stderr.decode('utf-8', errors='ignore') if stderr else ''\n                    \n                    # Truncate if too large\n                    if len(output) > self.max_output_size:\n                        output = output[:self.max_output_size] + '\\n[Output truncated...]'\n                    \n                    if len(error) > self.max_output_size:\n                        error = error[:self.max_output_size] + '\\n[Error output truncated...]'\n                    \n                    result = {\n                        'command': command,\n                        'success': process.returncode == 0,\n                        'output': output,\n                        'error': error,\n                        'exit_code': process.returncode,\n                        'execution_time': execution_time,\n                        'working_directory': safe_working_dir,\n                        'process_id': process_id\n                    }\n                    \n                    # Log result\n                    self.logger.info(f\"Command [{process_id}] completed: exit_code={process.returncode}, time={execution_time:.3f}s\")\n                    \n                    # Add to history\n                    self._add_to_history(result)\n                    \n                    return result\n                    \n                except asyncio.TimeoutError:\n                    # Kill process on timeout\n                    try:\n                        process.kill()\n                        await process.wait()\n                    except Exception:\n                        pass\n                    \n                    execution_time = timeout\n                    \n                    result = {\n                        'command': command,\n                        'success': False,\n                        'output': '',\n                        'error': f'Command timed out after {timeout} seconds',\n                        'exit_code': -1,\n                        'execution_time': execution_time,\n                        'working_directory': safe_working_dir,\n                        'process_id': process_id\n                    }\n                    \n                    self.logger.warning(f\"Command [{process_id}] timed out after {timeout}s\")\n                    self._add_to_history(result)\n                    \n                    return result\n                    \n            finally:\n                # Clean up process tracking\n                if process_id in self.active_processes:\n                    del self.active_processes[process_id]\n                    \n        except Exception as e:\n            execution_time = (datetime.now() - start_time).total_seconds()\n            \n            result = {\n                'command': command,\n                'success': False,\n                'output': '',\n                'error': str(e),\n                'exit_code': -1,\n                'execution_time': execution_time,\n                'working_directory': safe_working_dir if 'safe_working_dir' in locals() else None,\n                'process_id': process_id\n            }\n            \n            self.logger.error(f\"Command [{process_id}] failed: {e}\")\n            self._add_to_history(result)\n            \n            return result\n    \n    def kill_process(self, process_id: str) -> bool:\n        \"\"\"Kill a running process by process ID\"\"\"\n        if process_id not in self.active_processes:\n            return False\n        \n        process_info = self.active_processes[process_id]\n        pid = process_info.get('pid')\n        \n        if not pid:\n            return False\n        \n        try:\n            if self.is_windows:\n                subprocess.run(['taskkill', '/F', '/PID', str(pid)], check=True)\n            else:\n                os.kill(pid, signal.SIGTERM)\n                time.sleep(1)\n                try:\n                    os.kill(pid, signal.SIGKILL)\n                except ProcessLookupError:\n                    pass\n            \n            self.logger.info(f\"Killed process [{process_id}] with PID {pid}\")\n            return True\n            \n        except Exception as e:\n            self.logger.error(f\"Failed to kill process [{process_id}]: {e}\")\n            return False\n    \n    def get_active_processes(self) -> Dict[str, Dict[str, Any]]:\n        \"\"\"Get information about active processes\"\"\"\n        return self.active_processes.copy()\n    \n    def get_execution_history(self, limit: int = 100) -> List[Dict[str, Any]]:\n        \"\"\"Get recent execution history\"\"\"\n        return self.execution_history[-limit:] if limit else self.execution_history.copy()\n    \n    def get_execution_stats(self) -> Dict[str, Any]:\n        \"\"\"Get execution statistics\"\"\"\n        if not self.execution_history:\n            return {\n                'total_executions': 0,\n                'successful_executions': 0,\n                'failed_executions': 0,\n                'success_rate': 0.0,\n                'average_execution_time': 0.0\n            }\n        \n        total = len(self.execution_history)\n        successful = sum(1 for h in self.execution_history if h.get('success', False))\n        failed = total - successful\n        success_rate = (successful / total) * 100 if total > 0 else 0.0\n        \n        total_time = sum(h.get('execution_time', 0) for h in self.execution_history)\n        avg_time = total_time / total if total > 0 else 0.0\n        \n        return {\n            'total_executions': total,\n            'successful_executions': successful,\n            'failed_executions': failed,\n            'success_rate': success_rate,\n            'average_execution_time': avg_time,\n            'active_processes': len(self.active_processes)\n        }\n    \n    def test_powershell_availability(self) -> Dict[str, Any]:\n        \"\"\"Test PowerShell availability and capabilities\"\"\"\n        test_commands = [\n            'Write-Host \"PowerShell Test\"',\n            'Get-Date',\n            '$PSVersionTable.PSVersion',\n            'Get-ComputerInfo | Select-Object WindowsProductName, TotalPhysicalMemory'\n        ]\n        \n        results = {\n            'powershell_path': self.powershell_path,\n            'is_available': False,\n            'version_info': None,\n            'test_results': []\n        }\n        \n        for cmd in test_commands:\n            try:\n                result = self.execute_command(cmd, timeout=10)\n                results['test_results'].append({\n                    'command': cmd,\n                    'success': result['success'],\n                    'output': result['output'][:200],  # Truncate for brevity\n                    'execution_time': result['execution_time']\n                })\n                \n                if result['success'] and cmd == '$PSVersionTable.PSVersion':\n                    results['version_info'] = result['output'].strip()\n                    \n            except Exception as e:\n                results['test_results'].append({\n                    'command': cmd,\n                    'success': False,\n                    'error': str(e),\n                    'execution_time': 0\n                })\n        \n        # Consider available if at least the first test passed\n        results['is_available'] = (len(results['test_results']) > 0 and \n                                 results['test_results'][0].get('success', False))\n        \n        return results\n\ndef main():\n    \"\"\"Test PowerShell executor\"\"\"\n    executor = PowerShellExecutor()\n    \n    # Test availability\n    availability = executor.test_powershell_availability()\n    print(f\"PowerShell Available: {availability['is_available']}\")\n    print(f\"PowerShell Path: {availability['powershell_path']}\")\n    \n    if availability['version_info']:\n        print(f\"Version: {availability['version_info']}\")\n    \n    # Test basic command\n    result = executor.execute_command('Get-Date')\n    print(f\"\\nTest Command Result:\")\n    print(f\"Success: {result['success']}\")\n    print(f\"Output: {result['output'][:200]}\")\n    print(f\"Execution Time: {result['execution_time']:.3f}s\")\n    \n    # Show stats\n    stats = executor.get_execution_stats()\n    print(f\"\\nExecution Stats: {stats}\")\n\nif __name__ == \"__main__\":\n    main()"}
+                }
+            
+            # Sanitize working directory
+            safe_working_dir = self._sanitize_working_directory(working_directory)
+            
+            # Prepare command
+            cmd_args = self._prepare_command(command)
+            
+            # Track process
+            process_info = self._create_process_info(command, process_id)
+            self.active_processes[process_id] = process_info
+            
+            try:
+                # Create subprocess
+                process = await asyncio.create_subprocess_exec(
+                    *cmd_args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=safe_working_dir,
+                    limit=self.max_output_size
+                )
+                
+                process_info['pid'] = process.pid
+                
+                try:
+                    # Wait for completion with timeout
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=timeout
+                    )
+                    
+                    execution_time = (datetime.now() - start_time).total_seconds()
+                    
+                    # Decode output
+                    output = stdout.decode('utf-8', errors='ignore') if stdout else ''
+                    error = stderr.decode('utf-8', errors='ignore') if stderr else ''
+                    
+                    # Truncate if too large
+                    if len(output) > self.max_output_size:
+                        output = output[:self.max_output_size] + '\n[Output truncated...]'
+                    
+                    if len(error) > self.max_output_size:
+                        error = error[:self.max_output_size] + '\n[Error output truncated...]'
+                    
+                    result = {
+                        'command': command,
+                        'success': process.returncode == 0,
+                        'output': output,
+                        'error': error,
+                        'exit_code': process.returncode,
+                        'execution_time': execution_time,
+                        'working_directory': safe_working_dir,
+                        'process_id': process_id
+                    }
+                    
+                    # Log result
+                    self.logger.info(f"Command [{process_id}] completed: exit_code={process.returncode}, time={execution_time:.3f}s")
+                    
+                    # Add to history
+                    self._add_to_history(result)
+                    
+                    return result
+                    
+                except asyncio.TimeoutError:
+                    # Kill process on timeout
+                    try:
+                        process.kill()
+                        await process.wait()
+                    except Exception:
+                        pass
+                    
+                    execution_time = timeout
+                    
+                    result = {
+                        'command': command,
+                        'success': False,
+                        'output': '',
+                        'error': f'Command timed out after {timeout} seconds',
+                        'exit_code': -1,
+                        'execution_time': execution_time,
+                        'working_directory': safe_working_dir,
+                        'process_id': process_id
+                    }
+                    
+                    self.logger.warning(f"Command [{process_id}] timed out after {timeout}s")
+                    self._add_to_history(result)
+                    
+                    return result
+                    
+            finally:
+                # Clean up process tracking
+                if process_id in self.active_processes:
+                    del self.active_processes[process_id]
+                    
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            result = {
+                'command': command,
+                'success': False,
+                'output': '',
+                'error': str(e),
+                'exit_code': -1,
+                'execution_time': execution_time,
+                'working_directory': safe_working_dir if 'safe_working_dir' in locals() else None,
+                'process_id': process_id
+            }
+            
+            self.logger.error(f"Command [{process_id}] failed: {e}")
+            self._add_to_history(result)
+            
+            return result
+    
+    def kill_process(self, process_id: str) -> bool:
+        """Kill a running process by process ID"""
+        if process_id not in self.active_processes:
+            return False
+        
+        process_info = self.active_processes[process_id]
+        pid = process_info.get('pid')
+        
+        if not pid:
+            return False
+        
+        try:
+            if self.is_windows:
+                subprocess.run(['taskkill', '/F', '/PID', str(pid)], check=True)
+            else:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(1)
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            
+            self.logger.info(f"Killed process [{process_id}] with PID {pid}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to kill process [{process_id}]: {e}")
+            return False
+    
+    def get_active_processes(self) -> Dict[str, Dict[str, Any]]:
+        """Get information about active processes"""
+        return self.active_processes.copy()
+    
+    def get_execution_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent execution history"""
+        return self.execution_history[-limit:] if limit else self.execution_history.copy()
+    
+    def get_execution_stats(self) -> Dict[str, Any]:
+        """Get execution statistics"""
+        if not self.execution_history:
+            return {
+                'total_executions': 0,
+                'successful_executions': 0,
+                'failed_executions': 0,
+                'success_rate': 0.0,
+                'average_execution_time': 0.0
+            }
+        
+        total = len(self.execution_history)
+        successful = sum(1 for h in self.execution_history if h.get('success', False))
+        failed = total - successful
+        success_rate = (successful / total) * 100 if total > 0 else 0.0
+        
+        total_time = sum(h.get('execution_time', 0) for h in self.execution_history)
+        avg_time = total_time / total if total > 0 else 0.0
+        
+        return {
+            'total_executions': total,
+            'successful_executions': successful,
+            'failed_executions': failed,
+            'success_rate': success_rate,
+            'average_execution_time': avg_time,
+            'active_processes': len(self.active_processes)
+        }
+    
+    def test_powershell_availability(self) -> Dict[str, Any]:
+        """Test PowerShell availability and capabilities"""
+        test_commands = [
+            'Write-Host "PowerShell Test"',
+            'Get-Date',
+            '$PSVersionTable.PSVersion',
+            'Get-ComputerInfo | Select-Object WindowsProductName, TotalPhysicalMemory'
+        ]
+        
+        results = {
+            'powershell_path': self.powershell_path,
+            'is_available': False,
+            'version_info': None,
+            'test_results': []
+        }
+        
+        for cmd in test_commands:
+            try:
+                result = self.execute_command(cmd, timeout=10)
+                results['test_results'].append({
+                    'command': cmd,
+                    'success': result['success'],
+                    'output': result['output'][:200],  # Truncate for brevity
+                    'execution_time': result['execution_time']
+                })
+                
+                if result['success'] and cmd == '$PSVersionTable.PSVersion':
+                    results['version_info'] = result['output'].strip()
+                    
+            except Exception as e:
+                results['test_results'].append({
+                    'command': cmd,
+                    'success': False,
+                    'error': str(e),
+                    'execution_time': 0
+                })
+        
+        # Consider available if at least the first test passed
+        results['is_available'] = (len(results['test_results']) > 0 and 
+                                 results['test_results'][0].get('success', False))
+        
+        return results
+
+def main():
+    """Test PowerShell executor"""
+    executor = PowerShellExecutor()
+    
+    # Test availability
+    availability = executor.test_powershell_availability()
+    print(f"PowerShell Available: {availability['is_available']}")
+    print(f"PowerShell Path: {availability['powershell_path']}")
+    
+    if availability['version_info']:
+        print(f"Version: {availability['version_info']}")
+    
+    # Test basic command
+    result = executor.execute_command('Get-Date')
+    print(f"\nTest Command Result:")
+    print(f"Success: {result['success']}")
+    print(f"Output: {result['output'][:200]}")
+    print(f"Execution Time: {result['execution_time']:.3f}s")
+    
+    # Show stats
+    stats = executor.get_execution_stats()
+    print(f"\nExecution Stats: {stats}")
+
+if __name__ == "__main__":
+    main()

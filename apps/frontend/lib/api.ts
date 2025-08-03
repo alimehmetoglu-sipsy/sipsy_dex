@@ -456,20 +456,36 @@ class ApiClient {
   }
 
   async createPythonAgent(config: AgentInstallerConfig): Promise<Blob> {
-    const response = await fetch(`${this.baseUrl}/api/v1/installer/create-python`, {
+    // Use the frontend's download-agent route instead of direct backend call
+    // This route has proven to work correctly
+    const response = await fetch('/api/download-agent', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {})
       },
       body: JSON.stringify(config)
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      const errorText = await response.text()
+      console.error('API Error Response:', errorText)
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`)
     }
 
-    return response.blob()
+    const contentType = response.headers.get('content-type')
+    console.log('Response content-type:', contentType)
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()))
+    
+    // Check if response is actually a file or an error JSON
+    if (contentType && contentType.includes('application/json')) {
+      const errorData = await response.json()
+      console.error('Received JSON error response:', errorData)
+      throw new Error(errorData.detail || errorData.message || 'Server returned JSON instead of file')
+    }
+
+    const blob = await response.blob()
+    console.log('Blob created successfully, size:', blob.size)
+    return blob
   }
 
   // AI-Powered Command Generation

@@ -62,6 +62,8 @@ services:
     volumes:
       # Source code for development
       - ./apps/backend:/app
+      # Agent source files (needed for installer creation)
+      - ./apps/agent:/app/apps/agent:ro
       # Persistent data
       - backend_data:/app/data
       - backend_logs:/app/logs

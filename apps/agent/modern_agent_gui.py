@@ -23,6 +23,42 @@ from typing import Dict, Any, Optional
 import queue
 import urllib.parse
 
+# Import system tray manager
+try:
+    from tray_manager import SystemTrayManager
+    TRAY_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"System tray not available: {e}")
+    TRAY_AVAILABLE = False
+
+# Import WebSocket client with PyInstaller compatibility
+def _setup_pyinstaller_paths():
+    """Add PyInstaller bundle directory to Python path"""
+    import sys
+    import os
+    
+    # If running from PyInstaller bundle, add bundle directory to path
+    if hasattr(sys, '_MEIPASS'):
+        bundle_dir = sys._MEIPASS
+        if bundle_dir not in sys.path:
+            sys.path.insert(0, bundle_dir)
+    
+    # Also try current directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+
+# Setup paths for PyInstaller
+_setup_pyinstaller_paths()
+
+# Import WebSocket client
+try:
+    from websocket_client import WebSocketClient
+    WEBSOCKET_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"WebSocket client not available: {e}")
+    WEBSOCKET_AVAILABLE = False
+
 # Configure logging
 def setup_logging():
     """Setup comprehensive logging"""
@@ -59,14 +95,28 @@ class ModernDexAgentGUI:
         
         # Initialize variables
         self.agent_running = False
+        self.agent_id = None
         self.agent_thread = None
         self.status_queue = queue.Queue()
         self.config = self.load_config()
+        
+        # Initialize system tray
+        self.tray_manager = None
+        self.minimize_to_tray = self.config.get("minimize_to_tray", True)
         
         # Create main window
         self.setup_main_window()
         self.create_widgets()
         self.setup_status_updates()
+        
+        # Initialize system tray if available
+        if TRAY_AVAILABLE:
+            self.setup_system_tray()
+        
+        # Initialize WebSocket client
+        self.websocket_client = None
+        if WEBSOCKET_AVAILABLE:
+            self.setup_websocket_client()
         
         # Test initial connection
         self.test_connection_async()
@@ -92,6 +142,238 @@ class ModernDexAgentGUI:
         # Style configuration
         self.setup_styles()
         
+        # Configure window close behavior for tray integration
+        if TRAY_AVAILABLE and self.minimize_to_tray:
+            self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
+            
+    def setup_system_tray(self):
+        """Setup system tray integration"""
+        try:
+            self.tray_manager = SystemTrayManager(self)
+            
+            # Set up callbacks
+            self.tray_manager.set_callback('sync_now', self.sync_now)
+            self.tray_manager.set_callback('show_config', self.show_configuration_dialog)
+            self.tray_manager.set_callback('view_logs', self.open_logs)
+            self.tray_manager.set_callback('show_about', self.show_about_dialog)
+            self.tray_manager.set_callback('show_main_window', self.show_main_window)
+            self.tray_manager.set_callback('exit_application', self.exit_application)
+            
+            # Start tray in background
+            self.tray_manager.start_async()
+            
+            # Initial status update
+            self.tray_manager.update_status("disconnected", "Starting...")
+            
+            self.logger.info("System tray initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize system tray: {e}")
+            self.tray_manager = None
+    
+    def setup_websocket_client(self):
+        """Setup WebSocket client for real-time communication"""
+        try:
+            server_url = self.config.get("server_url", "http://localhost:8080")
+            api_token = self.config.get("api_token", "")
+            agent_id = self.agent_id or "temp-agent"
+            
+            # Initialize WebSocket client with correct parameter order
+            self.websocket_client = WebSocketClient(
+                agent_id=agent_id,
+                server_url=server_url,  # Keep HTTP format, client will convert
+                api_token=api_token,
+                gui_callback=self._websocket_callback
+            )
+            
+            self.logger.info("WebSocket client initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize WebSocket client: {e}")
+
+    def _websocket_callback(self, event_type: str, data: dict = None):
+        """Handle WebSocket events"""
+        try:
+            self.logger.info(f"WebSocket event: {event_type}")
+            
+            if event_type == "connected":
+                self.status_queue.put(("websocket", "WebSocket connected", "success"))
+            elif event_type == "disconnected":
+                self.status_queue.put(("websocket", "WebSocket disconnected", "warning"))
+            elif event_type == "command_received":
+                command = data.get("command", "Unknown command") if data else "Unknown command"
+                self.status_queue.put(("command", f"Command received: {command[:50]}...", "info"))
+            elif event_type == "command_completed":
+                result = data.get("result", {}) if data else {}
+                success = result.get("success", False)
+                status = "success" if success else "error"
+                self.status_queue.put(("command", f"Command completed: {'success' if success else 'failed'}", status))
+                
+        except Exception as e:
+            self.logger.error(f"Error in WebSocket callback: {e}")
+            self.websocket_client = None
+    
+    def start_websocket_connection(self):
+        """Start WebSocket connection for real-time communication"""
+        if not self.websocket_client:
+            self.logger.warning("WebSocket client not available")
+            return
+            
+        try:
+            # Update WebSocket client with current agent_id
+            if self.agent_id:
+                self.websocket_client.agent_id = self.agent_id
+            
+            # Start WebSocket connection in background
+            self.websocket_thread = threading.Thread(target=self._run_websocket, daemon=True)
+            self.websocket_thread.start()
+            
+            self.logger.info("WebSocket connection thread started")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start WebSocket connection: {e}")
+    
+    def _run_websocket(self):
+        """Run WebSocket client (background thread)"""
+        try:
+            import asyncio
+            
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Run the WebSocket client
+                loop.run_until_complete(self.websocket_client.run())
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            self.logger.error(f"WebSocket client error: {e}")
+            self.status_queue.put(("websocket", f"WebSocket error: {str(e)}", "error"))
+            
+    def on_window_close(self):
+        """Handle window close event - minimize to tray if enabled"""
+        if self.minimize_to_tray and self.tray_manager:
+            self.root.withdraw()  # Hide the window
+            if self.tray_manager:
+                self.tray_manager.show_notification(
+                    "DexAgents Agent", 
+                    "Application minimized to system tray"
+                )
+            self.logger.info("Window minimized to system tray")
+        else:
+            self.exit_application()
+            
+    def show_main_window(self):
+        """Show main window from system tray"""
+        self.root.deiconify()  # Show window
+        self.root.lift()       # Bring to front
+        self.root.focus_force() # Force focus
+        self.logger.info("Main window restored from system tray")
+        
+    def exit_application(self):
+        """Exit the application completely"""
+        self.logger.info("Exiting application")
+        
+        # Stop agent if running
+        if self.agent_running:
+            self.agent_running = False
+            
+        # Stop system tray
+        if self.tray_manager:
+            self.tray_manager.stop()
+            
+        # Stop WebSocket connection
+        if self.websocket_client:
+            try:
+                asyncio.run(self.websocket_client.stop())
+            except Exception as e:
+                self.logger.error(f"Error stopping WebSocket client: {e}")
+            
+        # Close main window
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except:
+            pass
+            
+        sys.exit(0)
+        
+    def sync_now(self):
+        """Manual sync trigger from system tray"""
+        self.logger.info("Manual sync triggered")
+        
+        if not self.agent_running:
+            if self.tray_manager:
+                self.tray_manager.show_notification(
+                    "Sync Failed", 
+                    "Agent is not running. Please start the agent first."
+                )
+            return
+            
+        # Trigger immediate status update
+        threading.Thread(target=self._perform_sync, daemon=True).start()
+        
+    def _perform_sync(self):
+        """Perform synchronization operation"""
+        try:
+            # Update status with server
+            success = self.update_status()
+            
+            if success:
+                if self.tray_manager:
+                    self.tray_manager.show_notification(
+                        "Sync Complete", 
+                        "Agent synchronized successfully with server"
+                    )
+                    self.tray_manager.update_status("connected")
+                self.log_message("Manual sync completed successfully")
+            else:
+                if self.tray_manager:
+                    self.tray_manager.show_notification(
+                        "Sync Failed", 
+                        "Failed to synchronize with server"
+                    )
+                    self.tray_manager.update_status("error")
+                self.log_message("Manual sync failed")
+                
+        except Exception as e:
+            self.logger.error(f"Sync error: {e}")
+            if self.tray_manager:
+                self.tray_manager.show_notification(
+                    "Sync Error", 
+                    f"Sync failed: {str(e)}"
+                )
+                self.tray_manager.update_status("error")
+                
+    def show_configuration_dialog(self):
+        """Show configuration dialog (placeholder for now)"""
+        # For now, just show the main window - will be enhanced in DX-41
+        self.show_main_window()
+        self.log_message("Configuration dialog requested")
+        
+    def show_about_dialog(self):
+        """Show about dialog"""
+        about_text = f"""DexAgents Modern Windows Agent
+Version: {self.config['version']}
+Created: {datetime.now().strftime('%Y-%m-%d')}
+
+A comprehensive system monitoring and management agent
+for Windows environments.
+
+Features:
+• Real-time system monitoring
+• WebSocket communication
+• System tray integration
+• Configurable settings
+• Automated status updates
+
+© 2024 DexAgents Team"""
+        
+        messagebox.showinfo("About DexAgents Agent", about_text)
+        
+        
     def setup_styles(self):
         """Configure modern styles for the GUI"""
         style = ttk.Style()
@@ -114,12 +396,13 @@ class ModernDexAgentGUI:
         config_file = Path("config.json")
         
         default_config = {
-            "server_url": "http://localhost:8000",
+            "server_url": "http://localhost:8080",
             "api_token": "",
             "agent_name": f"agent_{platform.node()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "tags": ["windows", "modern-gui"],
             "auto_start": True,
             "run_as_service": False,
+            "minimize_to_tray": True,
             "version": "3.0.0",
             "created_at": datetime.now().isoformat(),
             "update_interval": 30,
@@ -142,7 +425,7 @@ class ModernDexAgentGUI:
         """Save configuration to file"""
         try:
             # Update config with current values
-            self.config.update({
+            config_update = {
                 "server_url": self.server_url_var.get(),
                 "api_token": self.api_token_var.get(),
                 "agent_name": self.agent_name_var.get(),
@@ -150,7 +433,13 @@ class ModernDexAgentGUI:
                 "auto_start": self.auto_start_var.get(),
                 "run_as_service": self.run_as_service_var.get(),
                 "last_updated": datetime.now().isoformat()
-            })
+            }
+            
+            # Add minimize to tray setting if available
+            if TRAY_AVAILABLE and hasattr(self, 'minimize_to_tray_var'):
+                config_update["minimize_to_tray"] = self.minimize_to_tray_var.get()
+                
+            self.config.update(config_update)
             
             with open("config.json", 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
@@ -257,6 +546,17 @@ class ModernDexAgentGUI:
             variable=self.run_as_service_var
         )
         self.run_as_service_check.grid(row=0, column=1, sticky="w", padx=(20, 0))
+        
+        # Minimize to tray option (only show if tray is available)
+        if TRAY_AVAILABLE:
+            self.minimize_to_tray_var = tk.BooleanVar(value=self.config.get("minimize_to_tray", True))
+            self.minimize_to_tray_check = ttk.Checkbutton(
+                options_frame, 
+                text="Minimize to system tray", 
+                variable=self.minimize_to_tray_var,
+                command=self.on_minimize_to_tray_changed
+            )
+            self.minimize_to_tray_check.grid(row=1, column=0, sticky="w", pady=(5, 0))
         
     def create_status_section(self, parent):
         """Create status monitoring section"""
@@ -378,6 +678,19 @@ class ModernDexAgentGUI:
         else:
             self.api_token_entry.config(show="*")
             
+    def on_minimize_to_tray_changed(self):
+        """Handle minimize to tray setting change"""
+        if hasattr(self, 'minimize_to_tray_var'):
+            self.minimize_to_tray = self.minimize_to_tray_var.get()
+            
+            # Update window close behavior
+            if TRAY_AVAILABLE and self.minimize_to_tray:
+                self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
+            else:
+                self.root.protocol("WM_DELETE_WINDOW", self.exit_application)
+                
+            self.log_message(f"Minimize to tray: {'enabled' if self.minimize_to_tray else 'disabled'}")
+            
     def log_message(self, message: str, level: str = "INFO"):
         """Add message to log with timestamp"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -476,19 +789,34 @@ class ModernDexAgentGUI:
                     if response.status_code == 200:
                         self.status_queue.put(("connection", "Connected", "success"))
                         self.log_message("Connection test successful")
+                        # Update tray status
+                        if self.tray_manager:
+                            self.tray_manager.update_status("connected")
                     else:
                         self.status_queue.put(("connection", f"Failed ({response.status_code})", "error"))
                         self.log_message(f"Connection test failed: {response.status_code}")
+                        # Update tray status
+                        if self.tray_manager:
+                            self.tray_manager.update_status("error")
                         
                 except requests.exceptions.ConnectionError:
                     self.status_queue.put(("connection", "Connection refused", "error"))
                     self.log_message("Connection refused - server may be down")
+                    # Update tray status
+                    if self.tray_manager:
+                        self.tray_manager.update_status("disconnected")
                 except requests.exceptions.Timeout:
                     self.status_queue.put(("connection", "Timeout", "error"))
                     self.log_message("Connection timeout")
+                    # Update tray status
+                    if self.tray_manager:
+                        self.tray_manager.update_status("error")
                 except Exception as e:
                     self.status_queue.put(("connection", f"Error: {str(e)}", "error"))
                     self.log_message(f"Connection error: {e}")
+                    # Update tray status
+                    if self.tray_manager:
+                        self.tray_manager.update_status("error")
                     
             except Exception as e:
                 self.log_message(f"Test connection error: {e}")
@@ -524,14 +852,16 @@ class ModernDexAgentGUI:
             }
             
             response = requests.post(
-                f"{server_url}/api/agents/register", 
+                f"{server_url}/api/v1/agents/register", 
                 json=agent_data, 
                 headers=headers,
                 timeout=self.config.get("connection_timeout", 10)
             )
             
             if response.status_code == 200:
-                self.log_message("Agent registered successfully")
+                agent_info = response.json()
+                self.agent_id = agent_info.get("id")
+                self.log_message(f"Agent registered successfully with ID: {self.agent_id}")
                 return True
             else:
                 self.log_message(f"Failed to register agent: {response.status_code}")
@@ -544,6 +874,10 @@ class ModernDexAgentGUI:
     def update_status(self) -> bool:
         """Update agent status with server"""
         try:
+            if not self.agent_id:
+                self.log_message("No agent ID - skipping status update")
+                return False
+                
             system_info = self.get_system_info()
             if not system_info:
                 return False
@@ -562,8 +896,8 @@ class ModernDexAgentGUI:
                 "Content-Type": "application/json"
             }
             
-            response = requests.post(
-                f"{server_url}/api/agents/status", 
+            response = requests.put(
+                f"{server_url}/api/v1/agents/{self.agent_id}", 
                 json=update_data, 
                 headers=headers,
                 timeout=self.config.get("connection_timeout", 10)
@@ -583,7 +917,20 @@ class ModernDexAgentGUI:
         if not self.register_agent():
             self.log_message("Failed to register agent - stopping")
             self.agent_running = False
+            # Update tray status
+            if self.tray_manager:
+                self.tray_manager.update_status("error", "Registration failed")
             return
+        else:
+            # Registration successful
+            if self.tray_manager:
+                self.tray_manager.update_status("connected", "Registered successfully")
+            
+            # Setup and start WebSocket connection after successful registration
+            if WEBSOCKET_AVAILABLE:
+                self.setup_websocket_client()  # Re-setup with correct agent_id
+                if self.websocket_client:
+                    self.start_websocket_connection()
             
         update_interval = self.config.get("update_interval", 30)
         
@@ -591,9 +938,16 @@ class ModernDexAgentGUI:
             try:
                 # Update status
                 if self.update_status():
-                    self.status_queue.put(("last_seen", datetime.now().strftime("%H:%M:%S")))
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    self.status_queue.put(("last_seen", current_time, "success"))
+                    # Update tray with successful status
+                    if self.tray_manager:
+                        self.tray_manager.update_status("connected", current_time)
                 else:
                     self.log_message("Failed to update status")
+                    # Update tray with error status
+                    if self.tray_manager:
+                        self.tray_manager.update_status("error", "Update failed")
                     
                 time.sleep(update_interval)
                 
@@ -621,6 +975,14 @@ class ModernDexAgentGUI:
             self.start_stop_button.config(text="Stop Agent")
             self.log_message("Starting agent...")
             
+            # Update tray status
+            if self.tray_manager:
+                self.tray_manager.update_status("disconnected", "Starting...")
+                self.tray_manager.show_notification(
+                    "DexAgents Agent", 
+                    "Agent is starting up..."
+                )
+            
             # Start agent thread
             self.agent_thread = threading.Thread(target=self.agent_loop, daemon=True)
             self.agent_thread.start()
@@ -630,6 +992,14 @@ class ModernDexAgentGUI:
             self.agent_status.config(text="Stopped", style='Error.TLabel')
             self.start_stop_button.config(text="Start Agent")
             self.log_message("Stopping agent...")
+            
+            # Update tray status
+            if self.tray_manager:
+                self.tray_manager.update_status("disconnected", "Stopped")
+                self.tray_manager.show_notification(
+                    "DexAgents Agent", 
+                    "Agent has been stopped"
+                )
             
     def save_configuration(self):
         """Save current configuration"""
@@ -681,7 +1051,14 @@ class ModernDexAgentGUI:
                 # Check status queue
                 try:
                     while True:
-                        status_type, value, style = self.status_queue.get_nowait()
+                        queue_item = self.status_queue.get_nowait()
+                        
+                        # Handle both 2-tuple and 3-tuple formats
+                        if len(queue_item) == 2:
+                            status_type, value = queue_item
+                            style = "info"
+                        else:
+                            status_type, value, style = queue_item
                         
                         if status_type == "connection":
                             if style == "success":

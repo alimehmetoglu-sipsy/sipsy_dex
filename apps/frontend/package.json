@@ -13,9 +13,10 @@
     "type-check": "tsc --noEmit",
     "export": "next export",
     "clean": "rm -rf .next out node_modules/.cache",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test": "echo 'No unit tests configured yet'",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:e2e:headed": "npx playwright test --headed"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -89,8 +89,8 @@ test-smoke: ## Run smoke tests
 
 test-backend: ## Run backend unit tests
 	@echo "$(BLUE)Running backend unit tests...$(NC)"
-	cd apps/backend && python -m pytest tests/ -v
-	cd apps/backend && python comprehensive_api_test.py
+	cd apps/backend && python3 -m pytest tests/ -v
+	cd apps/backend && python3 comprehensive_api_test.py
 	@echo "$(GREEN)✅ Backend tests completed$(NC)"
 
 test-frontend: ## Run frontend tests
@@ -116,7 +116,7 @@ test-coverage: ## Generate test coverage report
 
 test-reports: ## Generate test reports
 	@echo "$(BLUE)Generating test reports...$(NC)"
-	python tests/scripts/generate_performance_report.py
+	python3 tests/scripts/generate_performance_report.py
 	@echo "$(GREEN)✅ Test reports generated$(NC)"
 
 test-env-up: ## Start test environment
@@ -146,7 +146,7 @@ lint-all: ## Run linting on all code
 	@echo "$(YELLOW)Frontend linting...$(NC)"
 	cd apps/frontend && npm run lint || true
 	@echo "$(YELLOW)Backend linting...$(NC)"
-	cd apps/backend && python -m flake8 . || true
+	cd apps/backend && python3 -m flake8 . || true
 	@echo "$(GREEN)✅ Linting completed$(NC)"
 
 format-all: ## Format all code
@@ -154,7 +154,7 @@ format-all: ## Format all code
 	@echo "$(YELLOW)Frontend formatting...$(NC)"
 	cd apps/frontend && npm run format || true
 	@echo "$(YELLOW)Backend formatting...$(NC)"
-	cd apps/backend && python -m black . && python -m isort . || true
+	cd apps/backend && python3 -m black . && python3 -m isort . || true
 	@echo "$(GREEN)✅ Code formatting completed$(NC)"
 
 type-check: ## Run TypeScript type checking
@@ -187,7 +187,7 @@ build-prod: ## Build production Docker images
 # Database Commands
 db-migrate: ## Run database migrations
 	@echo "$(BLUE)Running database migrations...$(NC)"
-	cd apps/backend && python app/migrations/migration_manager.py
+	cd apps/backend && python3 app/migrations/migration_manager.py
 	@echo "$(GREEN)✅ Database migrations completed$(NC)"
 
 db-reset: ## Reset database (WARNING: destroys all data)
@@ -207,7 +207,7 @@ db-reset: ## Reset database (WARNING: destroys all data)
 
 db-seed: ## Seed database with default data
 	@echo "$(BLUE)Seeding database with default data...$(NC)"
-	cd apps/backend && python app/scripts/insert_default_commands.py
+	cd apps/backend && python3 app/scripts/insert_default_commands.py
 	@echo "$(GREEN)✅ Database seeded$(NC)"
 
 db-backup: ## Backup database
@@ -218,12 +218,12 @@ db-backup: ## Backup database
 # Agent Commands
 agent-build: ## Build Windows agent executable
 	@echo "$(BLUE)Building Windows agent executable...$(NC)"
-	cd apps/agent && python modern_build_exe.py
+	cd apps/agent && python3 modern_build_exe.py
 	@echo "$(GREEN)✅ Agent executable built in apps/agent/dist/$(NC)"
 
 agent-test: ## Test Windows agent
 	@echo "$(BLUE)Testing Windows agent...$(NC)"
-	cd apps/agent && python test_modern_agent.py
+	cd apps/agent && python3 test_modern_agent.py
 
 # Utility Commands
 clean-all: ## Clean all build artifacts and dependencies
@@ -257,7 +257,7 @@ health: ## Check system health
 health-detailed: ## Detailed health check with metrics
 	@echo "$(BLUE)Detailed health check...$(NC)"
 	@echo "$(YELLOW)System Info:$(NC)"
-	curl -s http://localhost:8080/api/v1/system/info | python -m json.tool || echo "$(RED)Backend not responding$(NC)"
+	curl -s http://localhost:8080/api/v1/system/info | python3 -m json.tool || echo "$(RED)Backend not responding$(NC)"
 	@echo "$(YELLOW)Docker Status:$(NC)"
 	docker compose ps
 
@@ -351,11 +351,11 @@ monitor-status: ## Check monitoring services status
 
 monitor-metrics: ## View current metrics
 	@echo "$(BLUE)Current system metrics:$(NC)"
-	curl -s http://localhost:8080/api/v1/stats | python -m json.tool || echo "$(RED)Backend metrics not available$(NC)"
+	curl -s http://localhost:8080/api/v1/stats | python3 -m json.tool || echo "$(RED)Backend metrics not available$(NC)"
 
 monitor-alerts: ## Check active alerts
 	@echo "$(BLUE)Active alerts:$(NC)"
-	curl -s http://localhost:9093/api/v1/alerts | python -m json.tool || echo "$(RED)AlertManager not available$(NC)"
+	curl -s http://localhost:9093/api/v1/alerts | python3 -m json.tool || echo "$(RED)AlertManager not available$(NC)"
 
 monitor-start: monitor-up ## Alias for monitor-up
 monitor-stop: monitor-down ## Alias for monitor-down
@@ -363,7 +363,7 @@ monitor-stop: monitor-down ## Alias for monitor-down
 # Documentation Commands
 docs-serve: ## Serve documentation locally
 	@echo "$(BLUE)Serving documentation at http://localhost:8000$(NC)"
-	cd docs && python -m http.server 8000
+	cd docs && python3 -m http.server 8000
 
 # Quick Start
 quick-start: ## Quick start development environment

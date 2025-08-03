@@ -16,6 +16,35 @@ import ssl
 import certifi
 from websockets.exceptions import ConnectionClosed, InvalidURI, InvalidHandshake
 
+# Import agent components
+def _import_agent_components():
+    """Import agent components with PyInstaller compatibility"""
+    import sys
+    import os
+    
+    # If running from PyInstaller bundle, add bundle directory to path
+    if hasattr(sys, '_MEIPASS'):
+        bundle_dir = sys._MEIPASS
+        if bundle_dir not in sys.path:
+            sys.path.insert(0, bundle_dir)
+    
+    # Also try current directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    try:
+        from system_monitor import SystemMonitor
+        from powershell_executor import PowerShellExecutor
+        from logger import Logger
+        return SystemMonitor, PowerShellExecutor, Logger, True
+    except ImportError as e:
+        logging.warning(f"Agent components not available: {e}")
+        return None, None, None, False
+
+# Import components
+SystemMonitor, PowerShellExecutor, Logger, COMPONENTS_AVAILABLE = _import_agent_components()
+
 class WebSocketClient:
     def __init__(self, agent_id: str, server_url: str, api_token: str, gui_callback: Optional[Callable] = None):
         self.agent_id = agent_id
@@ -42,14 +71,17 @@ class WebSocketClient:
         self.last_heartbeat = None
         self.heartbeat_task = None
         
-        # Import components
-        from system_monitor import SystemMonitor
-        from powershell_executor import PowerShellExecutor
-        from logger import Logger
-        
-        self.system_monitor = SystemMonitor()
-        self.powershell_executor = PowerShellExecutor()
-        self.logger = Logger()
+        # Initialize components
+        if COMPONENTS_AVAILABLE:
+            self.system_monitor = SystemMonitor()
+            self.powershell_executor = PowerShellExecutor()
+            self.logger = Logger()
+        else:
+            # Fallback to basic logging if imports fail
+            self.logger = logging.getLogger(__name__)
+            self.system_monitor = None
+            self.powershell_executor = None
+            self.logger.warning("Agent components not available, limited functionality")
         
         self.logger.info(f"WebSocket client initialized for agent: {agent_id}")
     
@@ -160,11 +192,17 @@ class WebSocketClient:
     async def _register_agent(self):
         """Register agent with server"""
         try:
-            system_info = self.system_monitor.get_current_stats()
+            # Get system info if system monitor is available
+            if self.system_monitor:
+                system_info = self.system_monitor.get_current_stats()
+                hostname = system_info.get("hostname", socket.gethostname())
+            else:
+                system_info = {"error": "System monitor not available"}
+                hostname = socket.gethostname()
             
             registration_data = {
                 "agent_id": self.agent_id,
-                "hostname": system_info.get("hostname", socket.gethostname()),
+                "hostname": hostname,
                 "ip": self._get_local_ip(),
                 "os": platform.system(),
                 "version": "2.0.0",
@@ -172,12 +210,15 @@ class WebSocketClient:
                 "tags": ["windows", "powershell", "modern"],
                 "system_info": system_info,
                 "capabilities": [
-                    "powershell_execution",
-                    "system_monitoring",
+                    "powershell_execution" if self.powershell_executor else None,
+                    "system_monitoring" if self.system_monitor else None,
                     "file_operations",
                     "process_management"
                 ]
             }
+            
+            # Remove None capabilities
+            registration_data["capabilities"] = [cap for cap in registration_data["capabilities"] if cap is not None]
             
             await self._send_message("register", registration_data)
             self.logger.info("Agent registration sent")
@@ -205,11 +246,14 @@ class WebSocketClient:
         try:
             data = json.loads(message)
             message_type = data.get("type")
+            request_id = data.get("request_id")
             message_data = data.get("data", {})
             
-            self.logger.info(f"Received message: {message_type}")
+            self.logger.info(f"Received message: {message_type}, request_id: {request_id}")
             
-            if message_type == "command":
+            if message_type == "powershell_command":
+                await self._handle_powershell_command(data)
+            elif message_type == "command":
                 await self._handle_command(message_data)
             elif message_type == "ping":
                 await self._handle_ping(message_data)
@@ -242,9 +286,20 @@ class WebSocketClient:
             
             # Execute command
             self.logger.info(f"Executing command [{command_id}]: {command}")
-            result = self.powershell_executor.execute_command(
-                command, timeout=timeout, working_directory=working_directory
-            )
+            
+            if self.powershell_executor:
+                result = self.powershell_executor.execute_command(
+                    command, timeout=timeout, working_directory=working_directory
+                )
+            else:
+                result = {
+                    "command": command,
+                    "success": False,
+                    "output": "",
+                    "error": "PowerShell executor not available",
+                    "exit_code": -1,
+                    "execution_time": 0
+                }
             
             # Send result back
             await self._send_message("command_result", {
@@ -273,6 +328,135 @@ class WebSocketClient:
                     }
                 })
     
+    async def _handle_powershell_command(self, data: Dict[str, Any]):
+        """Handle new PowerShell command format from backend"""
+        try:
+            command = data.get("command")
+            request_id = data.get("request_id")
+            timeout = data.get("timeout", 30)
+            working_directory = data.get("working_directory")
+            response_type = data.get("response_type", "command_response")
+            
+            if not command or not request_id:
+                self.logger.error("Invalid PowerShell command message format")
+                return
+            
+            # Notify GUI
+            self._notify_gui("command_received", {"command": command, "request_id": request_id})
+            
+            # Execute command
+            self.logger.info(f"Executing PowerShell command [{request_id}]: {command[:100]}...")
+            
+            if self.powershell_executor:
+                result = self.powershell_executor.execute_command(
+                    command, timeout=timeout, working_directory=working_directory
+                )
+            else:
+                result = {
+                    "command": command,
+                    "success": False,
+                    "output": "",
+                    "error": "PowerShell executor not available",
+                    "exit_code": -1,
+                    "execution_time": 0
+                }
+            
+            # Handle structured response types (process commands, system info)
+            if response_type in ["process_command", "system_info_update"]:
+                await self._send_structured_response(request_id, result, response_type)
+            else:
+                # Send regular command response
+                await self._send_command_response(request_id, result, command)
+            
+            # Notify GUI
+            self._notify_gui("command_completed", {"request_id": request_id, "result": result})
+            
+            self.logger.info(f"PowerShell command [{request_id}] completed: success={result.get('success')}")
+            
+        except Exception as e:
+            self.logger.error(f"Error handling PowerShell command: {e}")
+            # Send error response
+            if 'request_id' in locals():
+                await self._send_error_response(request_id, str(e))
+    
+    async def _send_structured_response(self, request_id: str, result: Dict[str, Any], response_type: str):
+        """Send structured response for process commands and system info"""
+        try:
+            if result["success"] and result["output"]:
+                # Try to parse JSON output from PowerShell
+                try:
+                    parsed_output = json.loads(result["output"])
+                    
+                    # Send successful structured response
+                    response_message = {
+                        "type": "command_response",
+                        "request_id": request_id,
+                        "success": True,
+                        "timestamp": datetime.now().isoformat(),
+                        **parsed_output
+                    }
+                    
+                    await self.websocket.send(json.dumps(response_message))
+                    self.logger.info(f"Sent structured response for {request_id}")
+                    
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, send raw output
+                    await self._send_command_response(request_id, result, "PowerShell Command")
+                    
+            else:
+                # Send error response
+                response_message = {
+                    "type": "command_response", 
+                    "request_id": request_id,
+                    "success": False,
+                    "error": result["error"] or "Command failed",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                await self.websocket.send(json.dumps(response_message))
+                self.logger.info(f"Sent error response for {request_id}")
+                
+        except Exception as e:
+            self.logger.error(f"Error sending structured response: {e}")
+            await self._send_error_response(request_id, str(e))
+    
+    async def _send_command_response(self, request_id: str, result: Dict[str, Any], command: str):
+        """Send regular command response"""
+        try:
+            response_message = {
+                "type": "command_response",
+                "request_id": request_id,
+                "success": result["success"],
+                "output": result["output"],
+                "error": result["error"],
+                "execution_time": result["execution_time"],
+                "timestamp": datetime.now().isoformat(),
+                "command": command
+            }
+            
+            await self.websocket.send(json.dumps(response_message))
+            self.logger.info(f"Sent command response for {request_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error sending command response: {e}")
+    
+    async def _send_error_response(self, request_id: str, error_message: str):
+        """Send error response"""
+        try:
+            response_message = {
+                "type": "command_response",
+                "request_id": request_id,
+                "success": False,
+                "error": error_message,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            await self.websocket.send(json.dumps(response_message))
+            self.logger.info(f"Sent error response for {request_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Error sending error response: {e}")
+    
     async def _handle_ping(self, data: Dict[str, Any]):
         """Handle ping message"""
         await self._send_message("pong", {
@@ -292,10 +476,18 @@ class WebSocketClient:
             request_id = data.get("request_id")
             detail_level = data.get("detail_level", "basic")
             
-            if detail_level == "detailed":
-                system_info = self.system_monitor.get_detailed_info()
+            if self.system_monitor:
+                if detail_level == "detailed":
+                    system_info = self.system_monitor.get_detailed_info()
+                else:
+                    system_info = self.system_monitor.get_current_stats()
             else:
-                system_info = self.system_monitor.get_current_stats()
+                system_info = {
+                    "error": "System monitor not available",
+                    "hostname": socket.gethostname(),
+                    "os": platform.system(),
+                    "timestamp": datetime.now().isoformat()
+                }
             
             await self._send_message("system_info_response", {
                 "request_id": request_id,
@@ -310,7 +502,15 @@ class WebSocketClient:
         while self.is_running and self.is_connected:
             try:
                 # Send heartbeat with system info
-                system_info = self.system_monitor.get_current_stats()
+                if self.system_monitor:
+                    system_info = self.system_monitor.get_current_stats()
+                else:
+                    system_info = {
+                        "hostname": socket.gethostname(),
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "limited_functionality"
+                    }
+                
                 await self._send_message("heartbeat", {
                     "agent_id": self.agent_id,
                     "system_info": system_info,
