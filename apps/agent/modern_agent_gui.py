@@ -23,6 +23,13 @@ from typing import Dict, Any, Optional
 import queue
 import urllib.parse
 
+# Import advanced configuration dialog
+try:
+    from advanced_config_dialog import AdvancedConfigDialog
+    ADVANCED_CONFIG_AVAILABLE = True
+except ImportError:
+    ADVANCED_CONFIG_AVAILABLE = False
+
 # Import system tray manager
 try:
     from tray_manager import SystemTrayManager
@@ -30,6 +37,14 @@ try:
 except ImportError as e:
     logging.warning(f"System tray not available: {e}")
     TRAY_AVAILABLE = False
+
+# Import service manager
+try:
+    from service_manager import ServiceManager
+    SERVICE_MANAGER_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Service manager not available: {e}")
+    SERVICE_MANAGER_AVAILABLE = False
 
 # Import WebSocket client with PyInstaller compatibility
 def _setup_pyinstaller_paths():
@@ -103,6 +118,14 @@ class ModernDexAgentGUI:
         # Initialize system tray
         self.tray_manager = None
         self.minimize_to_tray = self.config.get("minimize_to_tray", True)
+        
+        # Initialize service manager
+        self.service_manager = None
+        if SERVICE_MANAGER_AVAILABLE:
+            self.service_manager = ServiceManager(self.logger)
+            
+        # Startup options
+        self.start_minimized = False
         
         # Create main window
         self.setup_main_window()
@@ -439,16 +462,127 @@ Features:
             if TRAY_AVAILABLE and hasattr(self, 'minimize_to_tray_var'):
                 config_update["minimize_to_tray"] = self.minimize_to_tray_var.get()
                 
+            # Set default install path if not specified
+            if "install_path" not in self.config:
+                if platform.system() == "Windows":
+                    program_files = os.environ.get("PROGRAMFILES", "C:\\Program Files")
+                    config_update["install_path"] = os.path.join(program_files, "DexAgents")
+                elif platform.system() == "Darwin":  # macOS
+                    config_update["install_path"] = "/Applications/DexAgents"
+                else:  # Linux
+                    config_update["install_path"] = "/opt/dexagents"
+                
             self.config.update(config_update)
             
-            with open("config.json", 'w', encoding='utf-8') as f:
+            # Determine config file path (use Program Files for system-wide install)
+            config_file_path = "config.json"
+            if self.config.get("install_path"):
+                install_path = Path(self.config["install_path"])
+                if install_path.exists() or self.config.get("run_as_service", False):
+                    # Use system-wide config location for service mode
+                    if platform.system() == "Windows":
+                        config_dir = Path(os.environ.get("PROGRAMDATA", "C:\\ProgramData")) / "DexAgents"
+                    else:
+                        config_dir = Path("/etc/dexagents")
+                    
+                    config_dir.mkdir(parents=True, exist_ok=True)
+                    config_file_path = config_dir / "config.json"
+            
+            with open(config_file_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
             
-            self.logger.info("Configuration saved successfully")
+            # Apply auto-start and service settings
+            self.apply_auto_start_settings()
+            
+            self.logger.info(f"Configuration saved successfully to {config_file_path}")
             return True
         except Exception as e:
             self.logger.error(f"Error saving config: {e}")
             return False
+            
+    def apply_auto_start_settings(self):
+        """Apply auto-start and service settings"""
+        if not self.service_manager:
+            self.logger.warning("Service manager not available, skipping auto-start configuration")
+            return
+            
+        try:
+            auto_start_enabled = self.config.get("auto_start", False)
+            run_as_service = self.config.get("run_as_service", False)
+            
+            if auto_start_enabled:
+                # Get executable path
+                agent_path = self.service_manager.get_executable_path()
+                
+                # Configure auto-start
+                success, message = self.service_manager.configure_auto_start(
+                    enable=True,
+                    agent_path=agent_path,
+                    use_service=run_as_service
+                )
+                
+                if success:
+                    self.logger.info(f"Auto-start configured: {message}")
+                    self.log_message(f"Auto-start enabled: {message}")
+                else:
+                    self.logger.warning(f"Auto-start configuration failed: {message}")
+                    self.log_message(f"Auto-start warning: {message}")
+                    
+                    # If service installation failed but auto-start is still wanted,
+                    # try fallback to startup entry
+                    if run_as_service and not success:
+                        self.logger.info("Attempting fallback to startup entry")
+                        success, message = self.service_manager.configure_auto_start(
+                            enable=True,
+                            agent_path=agent_path,
+                            use_service=False
+                        )
+                        if success:
+                            self.logger.info(f"Fallback auto-start configured: {message}")
+                            self.log_message(f"Auto-start enabled (fallback): {message}")
+                            
+                            # Update config to reflect that service mode failed
+                            self.config["run_as_service"] = False
+                            self.run_as_service_var.set(False)
+            else:
+                # Disable auto-start
+                success, message = self.service_manager.configure_auto_start(
+                    enable=False,
+                    agent_path=""
+                )
+                
+                if success:
+                    self.logger.info("Auto-start disabled")
+                    self.log_message("Auto-start disabled")
+                else:
+                    self.logger.warning(f"Failed to disable auto-start: {message}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error applying auto-start settings: {e}")
+            self.log_message(f"Auto-start configuration error: {str(e)}")
+            
+    def load_config_to_gui(self):
+        """Load configuration values to GUI elements"""
+        try:
+            if hasattr(self, 'server_url_var'):
+                self.server_url_var.set(self.config.get("server_url", ""))
+            if hasattr(self, 'api_token_var'):
+                self.api_token_var.set(self.config.get("api_token", ""))
+            if hasattr(self, 'agent_name_var'):
+                self.agent_name_var.set(self.config.get("agent_name", ""))
+            if hasattr(self, 'tags_var'):
+                tags = self.config.get("tags", [])
+                self.tags_var.set(", ".join(tags) if tags else "")
+            if hasattr(self, 'auto_start_var'):
+                self.auto_start_var.set(self.config.get("auto_start", True))
+            if hasattr(self, 'run_as_service_var'):
+                self.run_as_service_var.set(self.config.get("run_as_service", False))
+            if hasattr(self, 'minimize_to_tray_var'):
+                self.minimize_to_tray_var.set(self.config.get("minimize_to_tray", True))
+                
+            self.logger.info("Configuration loaded to GUI")
+        except Exception as e:
+            self.logger.error(f"Error loading config to GUI: {e}")
             
     def create_widgets(self):
         """Create all GUI widgets"""
@@ -558,6 +692,15 @@ Features:
             )
             self.minimize_to_tray_check.grid(row=1, column=0, sticky="w", pady=(5, 0))
         
+        # Advanced Settings button
+        if ADVANCED_CONFIG_AVAILABLE:
+            self.advanced_button = ttk.Button(
+                options_frame,
+                text="Advanced Settings...",
+                command=self.open_advanced_settings
+            )
+            self.advanced_button.grid(row=1, column=1, sticky="e", padx=(20, 0), pady=(5, 0))
+        
     def create_status_section(self, parent):
         """Create status monitoring section"""
         status_frame = ttk.LabelFrame(parent, text="System Status", padding="10")
@@ -599,6 +742,11 @@ Features:
         ttk.Label(system_frame, text="Disk:").grid(row=1, column=0, sticky="w", pady=2)
         self.disk_usage_label = ttk.Label(system_frame, text="0%", style='Status.TLabel')
         self.disk_usage_label.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
+        
+        # Auto-start status
+        ttk.Label(system_frame, text="Auto-start:").grid(row=1, column=2, sticky="w", pady=2)
+        self.auto_start_status_label = ttk.Label(system_frame, text="Unknown", style='Status.TLabel')
+        self.auto_start_status_label.grid(row=1, column=3, sticky="w", padx=(10, 0), pady=2)
         
         # Network Status
         ttk.Label(system_frame, text="Network:").grid(row=1, column=2, sticky="w", pady=2)
@@ -1048,6 +1196,22 @@ Features:
                     c_drive_usage = disk_usage.get('C:\\', {}).get('percent', 0)
                     self.disk_usage_label.config(text=f"{c_drive_usage:.1f}%")
                 
+                # Update auto-start status
+                if self.service_manager:
+                    auto_start_status = self.service_manager.get_auto_start_status()
+                    if auto_start_status["enabled"]:
+                        if auto_start_status["service"]["running"]:
+                            status_text = "Service"
+                            style = 'Success.TLabel'
+                        else:
+                            status_text = "Enabled"
+                            style = 'Success.TLabel'
+                    else:
+                        status_text = "Disabled"
+                        style = 'Error.TLabel'
+                    
+                    self.auto_start_status_label.config(text=status_text, style=style)
+                
                 # Check status queue
                 try:
                     while True:
@@ -1082,10 +1246,74 @@ Features:
         # Start status updates
         update_status_display()
         
+    def open_advanced_settings(self):
+        """Open advanced configuration dialog"""
+        if not ADVANCED_CONFIG_AVAILABLE:
+            messagebox.showerror("Error", "Advanced configuration dialog is not available")
+            return
+            
+        try:
+            # Create and show advanced config dialog
+            dialog = AdvancedConfigDialog(self.root, self.config, self.logger)
+            self.root.wait_window(dialog.dialog)
+            
+            result = dialog.get_result()
+            if result:
+                # Update configuration with advanced settings
+                self.config.update(result)
+                
+                # Save updated configuration
+                if self.save_config():
+                    messagebox.showinfo("Success", "Advanced settings saved successfully!")
+                    self.logger.info("Advanced settings applied and saved")
+                else:
+                    messagebox.showerror("Error", "Failed to save advanced settings")
+            else:
+                self.logger.info("Advanced settings dialog cancelled")
+                
+        except Exception as e:
+            self.logger.error(f"Error opening advanced settings: {e}")
+            messagebox.showerror("Error", f"Failed to open advanced settings: {str(e)}")
+    
+    def save_and_validate_config(self):
+        """Save configuration with validation"""
+        try:
+            # Validate required fields
+            if not self.server_url_var.get().strip():
+                messagebox.showerror("Validation Error", "Server URL is required")
+                return False
+                
+            if not self.api_token_var.get().strip():
+                messagebox.showerror("Validation Error", "API Token is required")
+                return False
+                
+            if not self.agent_name_var.get().strip():
+                messagebox.showerror("Validation Error", "Agent Name is required")
+                return False
+            
+            # Save configuration
+            if self.save_config():
+                messagebox.showinfo("Success", "Configuration saved successfully!")
+                return True
+            else:
+                messagebox.showerror("Error", "Failed to save configuration")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error validating/saving config: {e}")
+            messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
+            return False
+    
     def run(self):
         """Run the GUI application"""
         try:
             self.log_message("GUI application started")
+            
+            # Handle start minimized
+            if self.start_minimized and self.tray_manager:
+                self.root.withdraw()  # Hide window
+                self.tray_manager.show_notification("DexAgents", "Started minimized to tray")
+            
             self.root.mainloop()
         except Exception as e:
             self.logger.error(f"GUI error: {e}")
@@ -1094,9 +1322,45 @@ Features:
 
 def main():
     """Main entry point"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="DexAgents Windows Agent")
+    parser.add_argument("--service-mode", action="store_true", 
+                       help="Run in service mode (headless)")
+    parser.add_argument("--minimized", action="store_true",
+                       help="Start minimized to system tray")
+    parser.add_argument("--config", type=str,
+                       help="Path to configuration file")
+    
+    args = parser.parse_args()
+    
     try:
-        app = ModernDexAgentGUI()
-        app.run()
+        if args.service_mode:
+            # Run in service mode (headless)
+            from windows_agent import DexWindowsAgent
+            
+            config_path = args.config or "config.json"
+            agent = DexWindowsAgent(config_path)
+            agent.run()
+        else:
+            # Run with GUI
+            app = ModernDexAgentGUI()
+            
+            # Apply startup arguments
+            if args.minimized and app.tray_manager:
+                app.start_minimized = True
+                
+            if args.config:
+                # Load specified config file
+                try:
+                    with open(args.config, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                        app.config.update(config)
+                        app.load_config_to_gui()
+                except Exception as e:
+                    app.logger.error(f"Failed to load config file {args.config}: {e}")
+            
+            app.run()
     except Exception as e:
         print(f"Fatal error: {e}")
         sys.exit(1)

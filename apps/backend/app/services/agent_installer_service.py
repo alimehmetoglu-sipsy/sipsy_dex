@@ -26,7 +26,7 @@ class AgentInstallerService:
             # Get agent name early
             agent_name = config.agent_name or 'Windows'
             
-            # Create embedded configuration with optimized localhost settings
+            # Create embedded configuration with optimized localhost settings and Program Files installation
             config_data = {
                 "server_url": config.server_url or "http://localhost:8080",
                 "api_token": config.api_token or "",
@@ -41,7 +41,11 @@ class AgentInstallerService:
                 "update_interval": 30,
                 "debug_mode": False,
                 "version": "3.0.0",
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                # Default installation to Program Files
+                "install_path": os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "DexAgents"),
+                "create_desktop_shortcut": True,
+                "create_start_menu": True
             }
             
             # Copy agent files from the source directory
@@ -67,6 +71,8 @@ class AgentInstallerService:
             agent_files = [
                 "installer_main.py",
                 "modern_agent_gui.py", 
+                "advanced_config_dialog.py",
+                "service_manager.py",
                 "tray_manager.py",
                 "config_manager.py",
                 "websocket_client.py",
