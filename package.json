@@ -1,0 +1,88 @@
+{
+  "name": "dex-agent-monorepo",
+  "version": "3.3.0",
+  "description": "DexAgent - Modern Windows Endpoint Management Platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "npm run dev:services",
+    "dev:services": "docker-compose up -d --build",
+    "dev:stop": "docker-compose down",
+    "dev:restart": "npm run dev:stop && npm run dev:services",
+    "dev:logs": "docker-compose logs -f",
+    "dev:logs:backend": "docker-compose logs -f backend",
+    "dev:logs:frontend": "docker-compose logs -f frontend",
+    "build": "npm run build:packages && npm run build:apps",
+    "build:packages": "npm run build --workspaces --if-present",
+    "build:apps": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd apps/frontend && npm run build",
+    "build:backend": "cd apps/backend && python -m pip install -r requirements.txt",
+    "test": "npm run test:all",
+    "test:all": "npm run test:backend && npm run test:frontend && npm run test:e2e",
+    "test:backend": "cd apps/backend && python -m pytest",
+    "test:frontend": "cd apps/frontend && npm test",
+    "test:e2e": "cd apps/frontend && npm run test:e2e",
+    "test:e2e:ui": "cd apps/frontend && npm run test:e2e:ui",
+    "lint": "npm run lint:all",
+    "lint:all": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "cd apps/frontend && npm run lint",
+    "lint:backend": "cd apps/backend && python -m flake8 .",
+    "format": "npm run format:all",
+    "format:all": "npm run format:frontend && npm run format:backend",
+    "format:frontend": "cd apps/frontend && npm run format",
+    "format:backend": "cd apps/backend && python -m black . && python -m isort .",
+    "type-check": "npm run type-check:frontend",
+    "type-check:frontend": "cd apps/frontend && npm run type-check",
+    "clean": "npm run clean:all",
+    "clean:all": "npm run clean:node_modules && npm run clean:build && npm run clean:docker",
+    "clean:node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +",
+    "clean:build": "find . -name 'dist' -o -name 'build' -o -name '.next' | grep -v node_modules | xargs rm -rf",
+    "clean:docker": "docker-compose down -v && docker system prune -f",
+    "db:migrate": "cd apps/backend && python app/migrations/migration_manager.py",
+    "db:reset": "npm run dev:stop && docker volume prune -f && npm run dev:services && sleep 10 && npm run db:migrate",
+    "db:seed": "cd apps/backend && python app/scripts/insert_default_commands.py",
+    "agent:build": "cd apps/agent && python modern_build_exe.py",
+    "agent:test": "cd apps/agent && python test_modern_agent.py",
+    "docs:serve": "cd docs && python -m http.server 8080",
+    "health": "curl -f http://localhost:8080/api/v1/system/health && curl -f http://localhost:3000/api/health",
+    "prod:build": "docker-compose -f docker-compose.prod.yml build",
+    "prod:up": "docker-compose -f docker-compose.prod.yml up -d",
+    "prod:down": "docker-compose -f docker-compose.prod.yml down"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "npm-run-all": "^4.1.5",
+    "wait-on": "^7.0.1"
+  },
+  "keywords": [
+    "windows",
+    "endpoint-management",
+    "powershell",
+    "agent",
+    "monitoring",
+    "fastapi",
+    "nextjs",
+    "docker",
+    "typescript",
+    "python"
+  ],
+  "author": "DexAgent Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/dex-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/dex-agent/issues"
+  },
+  "homepage": "https://github.com/your-org/dex-agent#readme"
+}

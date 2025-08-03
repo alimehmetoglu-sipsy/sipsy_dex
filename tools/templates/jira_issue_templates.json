@@ -1,0 +1,243 @@
+{
+  "templates": {
+    "feature_story": {
+      "name": "Feature Story Template",
+      "issuetype": "Story",
+      "priority": "Medium",
+      "description_template": "# Feature Story: {{feature_name}}\n\n## User Story\nAs a {{user_type}}, I want {{feature_description}} so that {{benefit}}.\n\n## Acceptance Criteria\n- [ ] {{criteria_1}}\n- [ ] {{criteria_2}}\n- [ ] {{criteria_3}}\n\n## Technical Requirements\n- {{tech_requirement_1}}\n- {{tech_requirement_2}}\n\n## Definition of Done\n- [ ] Code implemented and reviewed\n- [ ] Unit tests written and passing\n- [ ] Integration tests passing\n- [ ] Documentation updated\n- [ ] Feature tested on staging environment\n- [ ] Security review completed (if applicable)\n- [ ] Performance impact assessed\n\n## Dependencies\n- {{dependency_1}}\n- {{dependency_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "story_points": 5,
+        "labels": ["feature", "story"]
+      }
+    },
+    
+    "bug_report": {
+      "name": "Bug Report Template",
+      "issuetype": "Bug",
+      "priority": "High",
+      "description_template": "# Bug Report: {{bug_title}}\n\n## Summary\n{{bug_summary}}\n\n## Environment\n- **OS**: {{operating_system}}\n- **Browser**: {{browser_version}}\n- **Application Version**: {{app_version}}\n- **Environment**: {{environment}}\n\n## Steps to Reproduce\n1. {{step_1}}\n2. {{step_2}}\n3. {{step_3}}\n\n## Expected Behavior\n{{expected_behavior}}\n\n## Actual Behavior\n{{actual_behavior}}\n\n## Screenshots/Logs\n{{screenshots_logs}}\n\n## Additional Information\n- **Frequency**: {{frequency}}\n- **Impact**: {{impact}}\n- **Workaround**: {{workaround}}\n\n## Related Issues\n- {{related_issue_1}}\n- {{related_issue_2}}",
+      "fields": {
+        "labels": ["bug", "defect"]
+      }
+    },
+    
+    "task": {
+      "name": "General Task Template",
+      "issuetype": "Task",
+      "priority": "Medium",
+      "description_template": "# Task: {{task_title}}\n\n## Objective\n{{task_objective}}\n\n## Scope\n{{task_scope}}\n\n## Requirements\n- {{requirement_1}}\n- {{requirement_2}}\n- {{requirement_3}}\n\n## Deliverables\n- [ ] {{deliverable_1}}\n- [ ] {{deliverable_2}}\n- [ ] {{deliverable_3}}\n\n## Success Criteria\n- {{success_criteria_1}}\n- {{success_criteria_2}}\n\n## Timeline\n- **Start Date**: {{start_date}}\n- **Target Completion**: {{target_date}}\n\n## Dependencies\n- {{dependency_1}}\n- {{dependency_2}}\n\n## Resources Needed\n- {{resource_1}}\n- {{resource_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "labels": ["task"]
+      }
+    },
+    
+    "epic": {
+      "name": "Epic Template",
+      "issuetype": "Epic",
+      "priority": "High",
+      "description_template": "# Epic: {{epic_title}}\n\n## Vision\n{{epic_vision}}\n\n## Business Value\n{{business_value}}\n\n## Scope\n### In Scope\n- {{in_scope_1}}\n- {{in_scope_2}}\n- {{in_scope_3}}\n\n### Out of Scope\n- {{out_scope_1}}\n- {{out_scope_2}}\n\n## Success Metrics\n- {{metric_1}}\n- {{metric_2}}\n- {{metric_3}}\n\n## User Stories\n- [ ] {{story_1}}\n- [ ] {{story_2}}\n- [ ] {{story_3}}\n\n## Technical Approach\n{{technical_approach}}\n\n## Dependencies\n- {{dependency_1}}\n- {{dependency_2}}\n\n## Risks and Mitigation\n- **Risk**: {{risk_1}} | **Mitigation**: {{mitigation_1}}\n- **Risk**: {{risk_2}} | **Mitigation**: {{mitigation_2}}\n\n## Timeline\n- **Start Date**: {{start_date}}\n- **Target Completion**: {{target_date}}\n- **Milestones**: {{milestones}}\n\n## Resources\n- **Team Members**: {{team_members}}\n- **External Dependencies**: {{external_deps}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "labels": ["epic", "initiative"]
+      }
+    },
+    
+    "improvement": {
+      "name": "Improvement Template",
+      "issuetype": "Story",
+      "priority": "Low",
+      "description_template": "# Improvement: {{improvement_title}}\n\n## Current State\n{{current_state}}\n\n## Proposed Improvement\n{{proposed_improvement}}\n\n## Benefits\n- {{benefit_1}}\n- {{benefit_2}}\n- {{benefit_3}}\n\n## Implementation Plan\n1. {{implementation_step_1}}\n2. {{implementation_step_2}}\n3. {{implementation_step_3}}\n\n## Success Criteria\n- {{success_criteria_1}}\n- {{success_criteria_2}}\n\n## Metrics\n- **Before**: {{metric_before}}\n- **Target**: {{metric_target}}\n\n## Effort Estimation\n- **Development**: {{dev_effort}}\n- **Testing**: {{test_effort}}\n- **Documentation**: {{doc_effort}}\n\n## Risks\n- {{risk_1}}\n- {{risk_2}}\n\n## Dependencies\n- {{dependency_1}}\n- {{dependency_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "story_points": 3,
+        "labels": ["improvement", "enhancement"]
+      }
+    },
+    
+    "research_spike": {
+      "name": "Research Spike Template",
+      "issuetype": "Task",
+      "priority": "Medium",
+      "description_template": "# Research Spike: {{research_topic}}\n\n## Research Question\n{{research_question}}\n\n## Background\n{{background_context}}\n\n## Research Goals\n- {{goal_1}}\n- {{goal_2}}\n- {{goal_3}}\n\n## Research Areas\n- {{area_1}}\n- {{area_2}}\n- {{area_3}}\n\n## Deliverables\n- [ ] Research findings document\n- [ ] Technical recommendations\n- [ ] Prototype/POC (if applicable)\n- [ ] Implementation plan\n- [ ] Risk assessment\n\n## Timeline\n- **Duration**: {{duration}}\n- **Completion Date**: {{completion_date}}\n\n## Success Criteria\n- {{success_criteria_1}}\n- {{success_criteria_2}}\n\n## Resources\n- {{resource_1}}\n- {{resource_2}}\n\n## Output Format\n- {{output_format}}\n\n## Follow-up Actions\n- {{followup_1}}\n- {{followup_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "labels": ["research", "spike", "investigation"]
+      }
+    },
+    
+    "security_review": {
+      "name": "Security Review Template",
+      "issuetype": "Task",
+      "priority": "High",
+      "description_template": "# Security Review: {{component_name}}\n\n## Component Overview\n{{component_overview}}\n\n## Security Scope\n- {{scope_1}}\n- {{scope_2}}\n- {{scope_3}}\n\n## Security Requirements\n- [ ] Authentication mechanisms reviewed\n- [ ] Authorization controls verified\n- [ ] Input validation implemented\n- [ ] Output encoding applied\n- [ ] Data encryption assessed\n- [ ] Session management reviewed\n- [ ] Error handling evaluated\n- [ ] Logging and monitoring checked\n\n## Threat Model\n- **Asset**: {{asset}}\n- **Threats**: {{threats}}\n- **Vulnerabilities**: {{vulnerabilities}}\n- **Risk Level**: {{risk_level}}\n\n## Security Tests\n- [ ] Static code analysis\n- [ ] Dynamic security testing\n- [ ] Penetration testing\n- [ ] Dependency vulnerability scan\n\n## Findings\n{{security_findings}}\n\n## Recommendations\n- {{recommendation_1}}\n- {{recommendation_2}}\n- {{recommendation_3}}\n\n## Remediation Plan\n1. {{remediation_step_1}}\n2. {{remediation_step_2}}\n3. {{remediation_step_3}}\n\n## Compliance\n- {{compliance_requirement_1}}\n- {{compliance_requirement_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "labels": ["security", "review", "compliance"]
+      }
+    },
+    
+    "performance_optimization": {
+      "name": "Performance Optimization Template",
+      "issuetype": "Story",
+      "priority": "Medium",
+      "description_template": "# Performance Optimization: {{optimization_area}}\n\n## Current Performance\n- **Metric**: {{current_metric}}\n- **Baseline**: {{baseline_value}}\n- **Target**: {{target_value}}\n\n## Performance Issues\n- {{issue_1}}\n- {{issue_2}}\n- {{issue_3}}\n\n## Proposed Solutions\n1. {{solution_1}}\n2. {{solution_2}}\n3. {{solution_3}}\n\n## Implementation Plan\n- **Phase 1**: {{phase_1}}\n- **Phase 2**: {{phase_2}}\n- **Phase 3**: {{phase_3}}\n\n## Success Metrics\n- {{metric_1}}: {{target_1}}\n- {{metric_2}}: {{target_2}}\n- {{metric_3}}: {{target_3}}\n\n## Testing Strategy\n- [ ] Performance baseline established\n- [ ] Load testing plan created\n- [ ] Monitoring metrics defined\n- [ ] Regression tests updated\n\n## Risks\n- {{risk_1}}\n- {{risk_2}}\n\n## Dependencies\n- {{dependency_1}}\n- {{dependency_2}}\n\n## Monitoring\n- {{monitoring_1}}\n- {{monitoring_2}}\n\n## Notes\n{{additional_notes}}",
+      "fields": {
+        "story_points": 8,
+        "labels": ["performance", "optimization"]
+      }
+    }
+  },
+  
+  "workflows": {
+    "feature_development": {
+      "name": "Feature Development Workflow",
+      "description": "Standard workflow for feature development",
+      "steps": [
+        {
+          "name": "Planning",
+          "status": "To Do",
+          "tasks": [
+            "Create feature epic",
+            "Break down into stories",
+            "Estimate story points",
+            "Create technical design"
+          ]
+        },
+        {
+          "name": "Development",
+          "status": "In Progress",
+          "tasks": [
+            "Create feature branch",
+            "Implement backend API",
+            "Implement frontend components",
+            "Write unit tests",
+            "Update documentation"
+          ]
+        },
+        {
+          "name": "Testing",
+          "status": "In Review",
+          "tasks": [
+            "Run integration tests",
+            "Perform manual testing",
+            "Security review",
+            "Performance testing"
+          ]
+        },
+        {
+          "name": "Deployment",
+          "status": "Done",
+          "tasks": [
+            "Deploy to staging",
+            "UAT approval",
+            "Deploy to production",
+            "Monitor metrics"
+          ]
+        }
+      ]
+    },
+    
+    "bug_fix": {
+      "name": "Bug Fix Workflow",
+      "description": "Standard workflow for bug fixes",
+      "steps": [
+        {
+          "name": "Triage",
+          "status": "To Do",
+          "tasks": [
+            "Reproduce bug",
+            "Assess impact and priority",
+            "Assign to developer"
+          ]
+        },
+        {
+          "name": "Investigation",
+          "status": "In Progress",
+          "tasks": [
+            "Root cause analysis",
+            "Create fix plan",
+            "Estimate effort"
+          ]
+        },
+        {
+          "name": "Fix",
+          "status": "In Progress",
+          "tasks": [
+            "Implement fix",
+            "Write regression tests",
+            "Update documentation"
+          ]
+        },
+        {
+          "name": "Verification",
+          "status": "In Review",
+          "tasks": [
+            "Test fix",
+            "Verify no regressions",
+            "Get approval"
+          ]
+        },
+        {
+          "name": "Release",
+          "status": "Done",
+          "tasks": [
+            "Deploy fix",
+            "Verify in production",
+            "Close bug report"
+          ]
+        }
+      ]
+    }
+  },
+  
+  "labels": {
+    "priority": ["critical", "high", "medium", "low"],
+    "type": ["feature", "bug", "task", "epic", "improvement", "research"],
+    "component": ["frontend", "backend", "api", "database", "infrastructure"],
+    "status": ["blocked", "urgent", "needs-review", "ready-for-test"],
+    "team": ["development", "qa", "devops", "security", "product"]
+  },
+  
+  "automation_rules": {
+    "auto_assign": {
+      "name": "Auto-assign based on component",
+      "trigger": "issue_created",
+      "conditions": [
+        {
+          "field": "labels",
+          "contains": "frontend",
+          "action": "assign_to_team",
+          "value": "frontend-team"
+        },
+        {
+          "field": "labels",
+          "contains": "backend",
+          "action": "assign_to_team",
+          "value": "backend-team"
+        }
+      ]
+    },
+    
+    "auto_transition": {
+      "name": "Auto-transition on PR merge",
+      "trigger": "pr_merged",
+      "conditions": [
+        {
+          "field": "status",
+          "equals": "In Review",
+          "action": "transition_to",
+          "value": "Done"
+        }
+      ]
+    },
+    
+    "notify_stakeholders": {
+      "name": "Notify stakeholders on status change",
+      "trigger": "status_changed",
+      "conditions": [
+        {
+          "field": "priority",
+          "equals": "Critical",
+          "action": "send_notification",
+          "value": "stakeholders@company.com"
+        }
+      ]
+    }
+  }
+}

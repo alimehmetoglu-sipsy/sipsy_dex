@@ -1,0 +1,212 @@
+# Docker Compose for Testing Environment
+# Usage: docker-compose -f tests/docker-compose.test.yml up -d
+
+version: '3.8'
+
+services:
+  # Test PostgreSQL Database
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: dexagent-postgres-test
+    environment:
+      POSTGRES_DB: dexagent_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5434:5432"  # Different port to avoid conflicts
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dexagent_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Test Redis Cache
+  redis-test:
+    image: redis:7-alpine
+    container_name: dexagent-redis-test
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - test-network
+
+  # Test Backend Service
+  backend-test:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile.dev
+    container_name: dexagent-backend-test
+    environment:
+      - ENV=test
+      - DATABASE_URL=postgresql://postgres:postgres123@postgres-test:5432/dexagent_test
+      - REDIS_URL=redis://redis-test:6379/0
+      - JWT_SECRET_KEY=test-secret-key-12345
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+    ports:
+      - "8081:8000"  # Different port for testing
+    volumes:
+      - ../apps/backend:/app
+      - test_logs:/app/logs
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - test-network
+
+  # Test Frontend Service
+  frontend-test:
+    build:
+      context: ../apps/frontend
+      dockerfile: Dockerfile.dev
+    container_name: dexagent-frontend-test
+    environment:
+      - NODE_ENV=test
+      - NEXT_PUBLIC_API_URL=http://localhost:8081
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8081
+    ports:
+      - "3001:3000"  # Different port for testing
+    volumes:
+      - ../apps/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - test-network
+
+  # Test Runner Service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: dexagent-test-runner
+    environment:
+      - BACKEND_URL=http://backend-test:8000
+      - FRONTEND_URL=http://frontend-test:3000
+      - DATABASE_URL=postgresql://postgres:postgres123@postgres-test:5432/dexagent_test
+      - REDIS_URL=redis://redis-test:6379/0
+      - PYTHONPATH=/tests
+    volumes:
+      - .:/tests
+      - test_results:/tests/results
+      - test_logs:/tests/logs
+      - ../apps:/apps  # Access to source code
+    depends_on:
+      - postgres-test
+      - redis-test
+      - backend-test
+      - frontend-test
+    command: tail -f /dev/null  # Keep container running
+    networks:
+      - test-network
+
+  # Mock Agent Service (for testing)
+  mock-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-agent
+    container_name: dexagent-mock-agent
+    environment:
+      - BACKEND_URL=http://backend-test:8000
+      - AGENT_COUNT=5
+      - SIMULATION_MODE=true
+    volumes:
+      - ./mock-agent:/app
+    depends_on:
+      - backend-test
+    networks:
+      - test-network
+
+  # Selenium Grid Hub (for E2E testing)
+  selenium-hub:
+    image: selenium/hub:4.11.0
+    container_name: dexagent-selenium-hub
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+    networks:
+      - test-network
+
+  # Chrome Node for Selenium
+  selenium-chrome:
+    image: selenium/node-chrome:4.11.0
+    container_name: dexagent-selenium-chrome
+    shm_size: 2gb
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+    depends_on:
+      - selenium-hub
+    networks:
+      - test-network
+
+  # Firefox Node for Selenium
+  selenium-firefox:
+    image: selenium/node-firefox:4.11.0
+    container_name: dexagent-selenium-firefox
+    shm_size: 2gb
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+    depends_on:
+      - selenium-hub
+    networks:
+      - test-network
+
+  # Test Report Server
+  test-reports:
+    image: nginx:alpine
+    container_name: dexagent-test-reports
+    ports:
+      - "8082:80"
+    volumes:
+      - test_results:/usr/share/nginx/html:ro
+      - ./nginx-test-reports.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - test-network
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  test_results:
+    driver: local
+  test_logs:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

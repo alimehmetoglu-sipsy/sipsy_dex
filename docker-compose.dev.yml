@@ -1,0 +1,298 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service (Development)
+  postgres:
+    image: postgres:15-alpine
+    container_name: dexagents-postgres-dev
+    environment:
+      - POSTGRES_DB=dexagents_dev
+      - POSTGRES_USER=dexagents_dev
+      - POSTGRES_PASSWORD=dexagents_dev_password_secure
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./apps/backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      # Enhanced PostgreSQL configuration for development
+      - ./dev-config/postgres.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - dexagents-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dexagents_dev -d dexagents_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis Cache Service (Development)
+  redis:
+    image: redis:7-alpine
+    container_name: dexagents-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - dexagents-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  # Backend Service (Development with Hot Reload)
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: dexagents-backend-dev
+    ports:
+      - "8080:8000"  # Main API port
+      - "5678:5678"  # Debug port for VS Code/PyCharm
+    environment:
+      # API Settings
+      - API_V1_STR=/api/v1
+      - PROJECT_NAME=DexAgents - Windows PowerShell Agent (DEV)
+      - VERSION=3.3.0-dev
+      
+      # Development Settings
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+      
+      # Security (Development Keys)
+      - SECRET_KEY=dev-secret-key-change-in-production-very-long-and-secure
+      - SETTINGS_ENCRYPTION_KEY=SQieB6_JgZzpl3EAEHPHSRFOZ1SEIUaIzVgH03U1erg=
+      
+      # Database
+      - DATABASE_URL=postgresql://dexagents_dev:dexagents_dev_password_secure@postgres:5432/dexagents_dev
+      - DATABASE_POOL_SIZE=5
+      - DATABASE_MAX_OVERFLOW=10
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      
+      # CORS Origins (Development)
+      - BACKEND_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000,http://localhost:3001
+      
+      # PowerShell Settings
+      - DEFAULT_TIMEOUT=30
+      - MAX_TIMEOUT=300
+      
+      # Agent Settings
+      - AGENT_INSTALLER_PATH=agent_installers
+      - TEMP_DIR=temp
+      
+      # AI Settings (Development)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AI_MODEL=gpt-3.5-turbo
+      - AI_MAX_TOKENS=500
+      
+      # File Upload Settings
+      - MAX_FILE_SIZE=10485760  # 10MB
+      - UPLOAD_DIR=uploads
+      
+      # WebSocket Settings
+      - WS_HEARTBEAT_INTERVAL=30
+      - WS_CONNECTION_TIMEOUT=60
+      
+    volumes:
+      # Source code for hot reload
+      - ./apps/backend:/app
+      - backend_dev_data:/app/data
+      - backend_dev_logs:/app/logs
+      - backend_dev_temp:/app/temp
+      - backend_dev_installers:/app/agent_installers
+      - backend_dev_uploads:/app/uploads
+      
+      # Development tools
+      - ~/.vscode-server:/home/appuser/.vscode-server
+      - ~/.gitconfig:/home/appuser/.gitconfig:ro
+      
+      # ChatGPT API key (if available)
+      - ${HOME}/chatgpt.key:/app/chatgpt.key:ro
+      
+    networks:
+      - dexagents-dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend Service (Development with Hot Reload)
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: dexagents-frontend-dev
+    ports:
+      - "3000:3000"  # Main frontend port
+      - "3001:3001"  # Alternative port for testing
+      - "9229:9229"  # Node.js debug port
+    volumes:
+      # Source code for hot reload
+      - ./apps/frontend:/app
+      - /app/node_modules
+      - /app/.next
+      
+      # Development tools
+      - ~/.vscode-server:/home/nextjs/.vscode-server
+      - ~/.gitconfig:/home/nextjs/.gitconfig:ro
+      
+    environment:
+      # Next.js Development Settings
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+      - WATCHPACK_POLLING=true
+      - FAST_REFRESH=true
+      
+      # Debug Settings
+      - NODE_OPTIONS=--inspect=0.0.0.0:9229
+      
+      # API Configuration
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_API_TOKEN=dev-api-token
+      - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_INTERNAL_API_URL=http://backend:8000
+      
+      # WebSocket Configuration
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+      - NEXT_PUBLIC_WS_RECONNECT_INTERVAL=5000
+      
+      # Application Settings
+      - NEXT_PUBLIC_APP_NAME=DexAgents (DEV)
+      - NEXT_PUBLIC_APP_VERSION=3.3.0-dev
+      - NEXT_PUBLIC_APP_DESCRIPTION=Windows Endpoint Management Platform
+      - NEXT_PUBLIC_APP_ENV=development
+      
+      # Feature Flags (Development)
+      - NEXT_PUBLIC_ENABLE_DARK_MODE=true
+      - NEXT_PUBLIC_ENABLE_ANALYTICS=false
+      - NEXT_PUBLIC_ENABLE_DEBUG=true
+      - NEXT_PUBLIC_ENABLE_DEV_TOOLS=true
+      - NEXT_PUBLIC_ENABLE_HOT_RELOAD=true
+      
+      # Performance Settings
+      - NEXT_PUBLIC_ENABLE_SWC=true
+      - NEXT_PUBLIC_OPTIMIZE_IMAGES=false
+      
+    networks:
+      - dexagents-dev-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Development Tools Container
+  devtools:
+    image: alpine:latest
+    container_name: dexagents-devtools
+    volumes:
+      - ./:/workspace
+      - devtools_cache:/root/.cache
+    working_dir: /workspace
+    networks:
+      - dexagents-dev-network
+    command: tail -f /dev/null  # Keep container running
+    profiles: ["tools"]  # Only start when specifically requested
+
+  # Mail service for development (MailCatcher)
+  mailcatcher:
+    image: dockage/mailcatcher:latest
+    container_name: dexagents-mailcatcher-dev
+    ports:
+      - "1080:1080"  # Web interface
+      - "1025:1025"  # SMTP
+    networks:
+      - dexagents-dev-network
+    profiles: ["mail"]  # Only start when specifically requested
+
+  # File browser for development
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: dexagents-filebrowser-dev
+    ports:
+      - "8090:80"
+    volumes:
+      - ./:/srv
+      - filebrowser_config:/database
+    networks:
+      - dexagents-dev-network
+    profiles: ["files"]  # Only start when specifically requested
+
+networks:
+  dexagents-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  # Database volumes
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+    
+  # Backend volumes
+  backend_dev_data:
+    driver: local
+  backend_dev_logs:
+    driver: local
+  backend_dev_temp:
+    driver: local
+  backend_dev_installers:
+    driver: local
+  backend_dev_uploads:
+    driver: local
+    
+  # Development tool volumes
+  devtools_cache:
+    driver: local
+  filebrowser_config:
+    driver: local
+
+# Development profiles for optional services
+# Usage:
+#   docker-compose -f docker-compose.dev.yml up -d                    # Core services
+#   docker-compose -f docker-compose.dev.yml --profile tools up -d    # Include dev tools
+#   docker-compose -f docker-compose.dev.yml --profile mail up -d     # Include mail service
+#   docker-compose -f docker-compose.dev.yml --profile files up -d    # Include file browser

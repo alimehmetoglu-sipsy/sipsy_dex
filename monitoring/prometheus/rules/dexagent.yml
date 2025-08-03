@@ -1,0 +1,123 @@
+groups:
+  - name: dexagent.rules
+    rules:
+      # High-level service availability
+      - alert: DexAgentBackendDown
+        expr: up{job="dexagent-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "DexAgent Backend is down"
+          description: "DexAgent Backend has been down for more than 1 minute."
+
+      - alert: DexAgentFrontendDown
+        expr: up{job="dexagent-frontend"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: frontend
+        annotations:
+          summary: "DexAgent Frontend is down"
+          description: "DexAgent Frontend has been down for more than 2 minutes."
+
+      # Database connectivity
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database has been down for more than 1 minute."
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% for more than 5 minutes on {{ $labels.instance }}"
+
+      - alert: LowDiskSpace
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is above 90% on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+
+      # Application-specific alerts
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is above 10% for more than 5 minutes"
+
+      - alert: SlowAPIResponse
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "Slow API response times"
+          description: "95th percentile API response time is above 2 seconds"
+
+      # Agent connectivity
+      - alert: DisconnectedAgents
+        expr: count(agent_last_seen_timestamp < (time() - 300)) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: agents
+        annotations:
+          summary: "Agents disconnected"
+          description: "{{ $value }} agents have been disconnected for more than 5 minutes"
+
+      - alert: FailedCommands
+        expr: rate(agent_command_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: agents
+        annotations:
+          summary: "High command failure rate"
+          description: "Agent command failure rate is above 10% for more than 5 minutes"
+
+      # Container resource alerts
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container high CPU usage"
+          description: "Container {{ $labels.name }} CPU usage is above 80%"
+
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container high memory usage"
+          description: "Container {{ $labels.name }} memory usage is above 85%"
