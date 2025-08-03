@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
-from ...schemas.agent import Agent, AgentUpdate, AgentRegister
+from ...schemas.agent import Agent, AgentUpdate, AgentRegister, ProcessInfo, ProcessActionResponse, BulkProcessActionResponse, BulkProcessKillRequest
 from ...core.database import db_manager
 from ...core.auth import verify_token
 from ...core.websocket_manager import websocket_manager
@@ -165,9 +165,11 @@ async def execute_agent_command(
             if response:
                 logger.info(f"Command response received for {command_id}: {response.get('success', False)}")
                 # Convert agent response to CommandResponse
+                # Agent sends data in format: {"data": {"output": "..."}, "success": true}
+                data = response.get("data", {})
                 return CommandResponse(
                     success=response.get("success", False),
-                    output=response.get("output", ""),
+                    output=data.get("output", "") if isinstance(data, dict) else str(data),
                     error=response.get("error"),
                     execution_time=response.get("execution_time", 0.0),
                     timestamp=response.get("timestamp", datetime.now().isoformat()),
@@ -505,4 +507,206 @@ async def agent_heartbeat(agent_id: str, token: str = Depends(verify_token)):
         raise
     except Exception as e:
         logger.error(f"Error processing heartbeat for agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error") 
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# Process Management Endpoints
+
+@router.get("/{agent_id}/processes", response_model=List[ProcessInfo])
+async def get_agent_processes(agent_id: str, token: str = Depends(verify_token)):
+    """Get process list from a specific agent"""
+    try:
+        # Check if agent exists
+        agent_data = db_manager.get_agent(agent_id)
+        if not agent_data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        # Check if agent is connected via WebSocket
+        if not websocket_manager.is_agent_connected(agent_id):
+            raise HTTPException(status_code=400, detail="Agent is not connected")
+        
+        # Send process list request to agent via WebSocket
+        process_command = {
+            "action": "get_processes",
+            "timeout": 45
+        }
+        
+        # Execute process list command on agent
+        command_id = await websocket_manager.execute_process_command(agent_id, process_command)
+        
+        # Wait for response using proper async timeout
+        timeout_seconds = 45
+        logger.info(f"Waiting for process list response: {command_id}, timeout: {timeout_seconds}s")
+        
+        response = await websocket_manager.wait_for_command_response(command_id, timeout_seconds)
+        
+        if not response:
+            logger.warning(f"Process list request {command_id} timed out for agent {agent_id}")
+            raise HTTPException(status_code=408, detail="Request timed out")
+        
+        logger.info(f"Raw agent response keys: {list(response.keys())}")
+        logger.info(f"Response success: {response.get('success')}")
+        
+        if response.get("success", False):
+            # WebSocket handler stores agent data in "output" field
+            output = response.get("output", {})
+            logger.info(f"Response output type: {type(output)}")
+            
+            if isinstance(output, dict) and output.get("success", False):
+                processes_data = output.get("processes", [])
+                logger.info(f"Found processes in output: {len(processes_data)} processes")
+            else:
+                processes_data = response.get("processes", [])
+                logger.info(f"Found processes in response root: {len(processes_data)} processes")
+            processes = []
+            
+            for proc_data in processes_data:
+                processes.append(ProcessInfo(
+                    name=proc_data.get("name", ""),
+                    pid=proc_data.get("pid", 0),
+                    status=proc_data.get("status", "Unknown"),
+                    description=proc_data.get("description"),
+                    userName=proc_data.get("userName"),
+                    cpu=float(proc_data.get("cpu", 0.0)),
+                    memory_mb=float(proc_data.get("memory_mb", 0.0)),
+                    handles=int(proc_data.get("handles", 0)),
+                    threads=int(proc_data.get("threads", 0))
+                ))
+            
+            logger.info(f"Retrieved {len(processes)} processes from agent {agent_id}")
+            return processes
+        else:
+            error_msg = response.get("error", "Failed to get process list")
+            logger.error(f"Agent {agent_id} returned error: {error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting processes from agent {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get process list")
+
+@router.delete("/{agent_id}/processes/{pid}", response_model=ProcessActionResponse)
+async def kill_process(agent_id: str, pid: int, token: str = Depends(verify_token)):
+    """Kill a specific process on an agent"""
+    try:
+        # Check if agent exists
+        agent_data = db_manager.get_agent(agent_id)
+        if not agent_data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        # Check if agent is connected via WebSocket
+        if not websocket_manager.is_agent_connected(agent_id):
+            raise HTTPException(status_code=400, detail="Agent is not connected")
+        
+        # Send kill process request to agent via WebSocket
+        kill_command = {
+            "action": "kill_process",
+            "pid": pid,
+            "timeout": 45
+        }
+        
+        # Execute kill process command on agent
+        command_id = await websocket_manager.execute_process_command(agent_id, kill_command)
+        
+        # Wait for response using proper async timeout
+        timeout_seconds = 45
+        logger.info(f"Waiting for kill process response: {command_id}, pid: {pid}, timeout: {timeout_seconds}s")
+        
+        response = await websocket_manager.wait_for_command_response(command_id, timeout_seconds)
+        
+        if not response:
+            logger.warning(f"Kill process request {command_id} timed out for agent {agent_id}, pid: {pid}")
+            return ProcessActionResponse(
+                success=False,
+                message=f"Kill process request timed out after {timeout_seconds} seconds",
+                pid=pid
+            )
+        
+        success = response.get("success", False)
+        message = response.get("message", "Process termination completed")
+        
+        logger.info(f"Kill process response for PID {pid}: success={success}, message={message}")
+        
+        return ProcessActionResponse(
+            success=success,
+            message=message,
+            pid=pid
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error killing process {pid} on agent {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to kill process")
+
+@router.delete("/{agent_id}/processes/bulk", response_model=BulkProcessActionResponse)
+async def kill_processes_bulk(agent_id: str, request: BulkProcessKillRequest, token: str = Depends(verify_token)):
+    """Kill multiple processes on an agent"""
+    try:
+        # Check if agent exists
+        agent_data = db_manager.get_agent(agent_id)
+        if not agent_data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        # Check if agent is connected via WebSocket
+        if not websocket_manager.is_agent_connected(agent_id):
+            raise HTTPException(status_code=400, detail="Agent is not connected")
+        
+        if not request.process_ids:
+            raise HTTPException(status_code=400, detail="No process IDs provided")
+        
+        # Send bulk kill process request to agent via WebSocket
+        bulk_kill_command = {
+            "action": "kill_processes_bulk",
+            "pids": request.process_ids,
+            "timeout": 60  # Longer timeout for bulk operations
+        }
+        
+        # Execute bulk kill process command on agent
+        command_id = await websocket_manager.execute_process_command(agent_id, bulk_kill_command)
+        
+        # Wait for response using proper async timeout
+        timeout_seconds = 60
+        logger.info(f"Waiting for bulk kill process response: {command_id}, pids: {request.process_ids}, timeout: {timeout_seconds}s")
+        
+        response = await websocket_manager.wait_for_command_response(command_id, timeout_seconds)
+        
+        if not response:
+            logger.warning(f"Bulk kill process request {command_id} timed out for agent {agent_id}")
+            return BulkProcessActionResponse(
+                successful=[],
+                failed=[{"pid": pid, "error": f"Request timed out after {timeout_seconds} seconds"} for pid in request.process_ids],
+                total_processed=len(request.process_ids)
+            )
+        
+        if response.get("success", False):
+            results = response.get("results", {})
+            successful = results.get("successful", [])
+            failed_list = []
+            
+            for pid, error in results.get("failed", {}).items():
+                failed_list.append({"pid": int(pid), "error": error})
+            
+            logger.info(f"Bulk kill process results: successful={successful}, failed={len(failed_list)}")
+            
+            return BulkProcessActionResponse(
+                successful=successful,
+                failed=failed_list,
+                total_processed=len(request.process_ids)
+            )
+        else:
+            error_msg = response.get("error", "Bulk process kill failed")
+            logger.error(f"Agent {agent_id} bulk kill error: {error_msg}")
+            
+            # Return partial failure response
+            return BulkProcessActionResponse(
+                successful=[],
+                failed=[{"pid": pid, "error": error_msg} for pid in request.process_ids],
+                total_processed=len(request.process_ids)
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk killing processes on agent {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to bulk kill processes") 

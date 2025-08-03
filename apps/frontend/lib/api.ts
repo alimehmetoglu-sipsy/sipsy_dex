@@ -210,6 +210,30 @@ export interface AIStatusResponse {
   message: string
 }
 
+export interface ProcessInfo {
+  name: string
+  pid: number
+  status: string
+  description?: string
+  userName?: string
+  cpu: number
+  memory_mb: number
+  handles: number
+  threads: number
+}
+
+export interface ProcessActionResponse {
+  success: boolean
+  message: string
+  pid: number
+}
+
+export interface BulkProcessActionResponse {
+  successful: number[]
+  failed: Array<{pid: number, error: string}>
+  total_processed: number
+}
+
 class ApiClient {
   private baseUrl: string
   private token: string | null = null
@@ -465,6 +489,24 @@ class ApiClient {
 
   async getAIStatus(): Promise<AIStatusResponse> {
     return this.request<AIStatusResponse>('/api/v1/commands/ai/status')
+  }
+
+  // Process Management endpoints
+  async getAgentProcesses(agentId: string): Promise<ProcessInfo[]> {
+    return this.request<ProcessInfo[]>(`/api/v1/agents/${agentId}/processes`)
+  }
+
+  async killProcess(agentId: string, pid: number): Promise<ProcessActionResponse> {
+    return this.request<ProcessActionResponse>(`/api/v1/agents/${agentId}/processes/${pid}`, {
+      method: 'DELETE'
+    })
+  }
+
+  async killProcessesBulk(agentId: string, pids: number[]): Promise<BulkProcessActionResponse> {
+    return this.request<BulkProcessActionResponse>(`/api/v1/agents/${agentId}/processes/bulk`, {
+      method: 'DELETE',
+      body: JSON.stringify({ process_ids: pids })
+    })
   }
 }
 

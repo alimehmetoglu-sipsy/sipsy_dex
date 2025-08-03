@@ -58,4 +58,28 @@ class CommandResult(BaseModel):
     output: Optional[str] = None
     error: Optional[str] = None
     execution_time: Optional[float] = None
-    exit_code: Optional[int] = None 
+    exit_code: Optional[int] = None
+
+class ProcessInfo(BaseModel):
+    name: str
+    pid: int
+    status: str
+    description: Optional[str] = None
+    userName: Optional[str] = None
+    cpu: float
+    memory_mb: float
+    handles: int
+    threads: int
+
+class ProcessActionResponse(BaseModel):
+    success: bool
+    message: str
+    pid: int
+
+class BulkProcessActionResponse(BaseModel):
+    successful: List[int]
+    failed: List[Dict[str, Any]]
+    total_processed: int
+
+class BulkProcessKillRequest(BaseModel):
+    process_ids: List[int] 

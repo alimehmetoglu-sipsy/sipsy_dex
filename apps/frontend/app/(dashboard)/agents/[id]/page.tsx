@@ -37,6 +37,7 @@ import {
   Server
 } from "lucide-react"
 import { apiClient, Agent, SystemInfo, PowerShellCommand, CommandResponse } from "@/lib/api"
+import TaskManager from "@/components/TaskManager"
 import { useToast } from "@/hooks/use-toast"
 import { useParams } from "next/navigation"
 import {
@@ -77,6 +78,7 @@ export default function AgentDetailPage() {
   const [commandHistory, setCommandHistory] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState("overview")
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [showTaskManager, setShowTaskManager] = useState(false)
   const { toast } = useToast()
 
   const fetchAgent = async () => {
@@ -458,10 +460,11 @@ export default function AgentDetailPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="system">System Info</TabsTrigger>
           <TabsTrigger value="commands">Commands</TabsTrigger>
+          <TabsTrigger value="tools">Tools</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
@@ -930,6 +933,88 @@ export default function AgentDetailPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="tools" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Task Manager Tool */}
+            <Card className="cursor-pointer hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-blue-600" />
+                  Task Manager
+                </CardTitle>
+                <CardDescription>
+                  View and manage Windows processes running on this agent
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant={agent.status === 'online' ? 'default' : 'secondary'}>
+                    {agent.status === 'online' ? 'Available' : 'Unavailable'}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Features</span>
+                  <span className="text-sm">Process List, Kill Process</span>
+                </div>
+                <Button 
+                  className="w-full" 
+                  disabled={agent.status !== 'online'}
+                  onClick={() => setShowTaskManager(true)}
+                >
+                  <Terminal className="h-4 w-4 mr-2" />
+                  Open Task Manager
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Future Tools Placeholder */}
+            <Card className="opacity-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Monitor className="h-5 w-5 text-gray-500" />
+                  System Monitor
+                </CardTitle>
+                <CardDescription>
+                  Real-time system performance monitoring (Coming Soon)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant="outline">Coming Soon</Badge>
+                </div>
+                <Button className="w-full" disabled>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Open Monitor
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="opacity-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5 text-gray-500" />
+                  Service Manager
+                </CardTitle>
+                <CardDescription>
+                  Manage Windows services (Coming Soon)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant="outline">Coming Soon</Badge>
+                </div>
+                <Button className="w-full" disabled>
+                  <Power className="h-4 w-4 mr-2" />
+                  Open Services
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
         <TabsContent value="history" className="space-y-4">
           <Card>
             <CardHeader>
@@ -988,6 +1073,15 @@ export default function AgentDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Task Manager Dialog */}
+      {showTaskManager && (
+        <TaskManager
+          agentId={agentId}
+          isConnected={agent.status === 'online'}
+          onClose={() => setShowTaskManager(false)}
+        />
+      )}
     </div>
   )
 }

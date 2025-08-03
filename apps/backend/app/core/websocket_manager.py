@@ -302,5 +302,157 @@ $systemInfo | ConvertTo-Json -Depth 10 -Compress
         
         return request_id
 
+    async def execute_process_command(self, agent_id: str, process_command: Dict[str, Any]) -> str:
+        """Execute process management command on agent and return command ID"""
+        logger.info(f"Attempting to execute process command on agent {agent_id}: {process_command}")
+        logger.info(f"Connected agents: {list(self.agent_connections.keys())}")
+        
+        if agent_id not in self.agent_connections:
+            logger.error(f"Agent {agent_id} is not connected. Available agents: {list(self.agent_connections.keys())}")
+            raise ValueError(f"Agent {agent_id} is not connected")
+        
+        # Use process-specific request ID format
+        request_id = f"proc_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
+        action = process_command.get("action", "")
+        
+        # Store command info
+        self.pending_commands[request_id] = {
+            "agent_id": agent_id,
+            "action": action,
+            "timestamp": datetime.now(),
+            "status": "pending"
+        }
+        
+        # Create PowerShell command based on action
+        powershell_command = ""
+        
+        if action == "get_processes":
+            # Use the script from Commands library with proper wrapper for backend API
+            powershell_command = """
+try {
+    $processData = Get-Process | Select-Object Name, Id, CPU, WorkingSet, 
+        @{Name="Memory_MB";Expression={[math]::Round($_.WorkingSet/1MB,2)}},
+        @{Name="Handles";Expression={$_.HandleCount}},
+        @{Name="Threads";Expression={$_.Threads.Count}} | 
+        Sort-Object Memory_MB -Descending
+
+    $processes = @()
+    foreach ($proc in $processData) {
+        $process = @{
+            name = $proc.Name
+            pid = $proc.Id
+            status = "Running"
+            description = "N/A"
+            userName = [System.Environment]::UserName
+            cpu = if($proc.CPU) { [math]::Round($proc.CPU, 2) } else { 0.0 }
+            memory_mb = $proc.Memory_MB
+            handles = $proc.Handles
+            threads = $proc.Threads
+        }
+        $processes += $process
+    }
+
+    @{
+        success = $true
+        processes = $processes
+    } | ConvertTo-Json -Depth 3 -Compress
+    
+} catch {
+    @{
+        success = $false
+        error = $_.Exception.Message
+        processes = @()
+    } | ConvertTo-Json -Depth 2 -Compress
+}
+"""
+        
+        elif action == "kill_process":
+            pid = process_command.get("pid", 0)
+            # PowerShell command to kill a single process
+            powershell_command = f"""
+try {{
+    $process = Get-Process -Id {pid} -ErrorAction Stop
+    $processName = $process.ProcessName
+    
+    # Check if it's a critical system process
+    $criticalProcesses = @('explorer', 'winlogon', 'csrss', 'lsass', 'services', 'system', 'smss', 'wininit')
+    if ($criticalProcesses -contains $processName.ToLower()) {{
+        throw "Cannot terminate critical system process: $processName"
+    }}
+    
+    Stop-Process -Id {pid} -Force -ErrorAction Stop
+    @{{
+        success = $true
+        message = "Process $processName ({pid}) terminated successfully"
+    }} | ConvertTo-Json -Compress
+}} catch {{
+    @{{
+        success = $false
+        message = "Failed to terminate process {pid}: $($_.Exception.Message)"  
+    }} | ConvertTo-Json -Compress
+}}
+"""
+        
+        elif action == "kill_processes_bulk":
+            pids = process_command.get("pids", [])
+            pids_str = ",".join(map(str, pids))
+            # PowerShell command to kill multiple processes
+            powershell_command = f"""
+$pids = @({pids_str})
+$results = @{{
+    successful = @()
+    failed = @{{}}
+}}
+
+$criticalProcesses = @('explorer', 'winlogon', 'csrss', 'lsass', 'services', 'system', 'smss', 'wininit')
+
+foreach ($pid in $pids) {{
+    try {{
+        $process = Get-Process -Id $pid -ErrorAction Stop
+        $processName = $process.ProcessName
+        
+        # Check if it's a critical system process
+        if ($criticalProcesses -contains $processName.ToLower()) {{
+            $results.failed["$pid"] = "Cannot terminate critical system process: $processName"
+            continue
+        }}
+        
+        Stop-Process -Id $pid -Force -ErrorAction Stop
+        $results.successful += $pid
+    }} catch {{
+        $results.failed["$pid"] = $_.Exception.Message
+    }}
+}}
+
+@{{
+    success = $true
+    results = $results
+}} | ConvertTo-Json -Depth 3 -Compress
+"""
+        
+        else:
+            logger.error(f"Unknown process action: {action}")
+            raise ValueError(f"Unknown process action: {action}")
+        
+        # Send process command to agent
+        process_message = {
+            "type": "powershell_command",
+            "request_id": request_id,
+            "command": powershell_command,
+            "timeout": process_command.get("timeout", 30),
+            "response_type": "process_command",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"Sending process command {request_id} to agent {agent_id}")
+        success = await self.send_to_agent(agent_id, process_message)
+        if not success:
+            del self.pending_commands[request_id]
+            logger.error(f"Failed to send process command to agent {agent_id}")
+            raise ValueError(f"Failed to send process command to agent {agent_id}")
+        
+        logger.info(f"Process command {request_id} sent to agent {agent_id}")
+        return request_id
+
 # Global WebSocket manager instance
 websocket_manager = WebSocketManager() 
