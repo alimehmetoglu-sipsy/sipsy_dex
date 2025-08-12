@@ -206,4 +206,13 @@ docker-compose.override.yml
 *.tmp
 *.temp
 .tmp/
-.temp/ 
+.temp/
+node_modules/
+package-lock.json
+
+# GitHub PAT token
+.github_pat
+
+# Test files
+test_package_sources.py
+test_package_sources_fixed.py
